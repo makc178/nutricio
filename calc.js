@@ -164,6 +164,8 @@
     return { bmi: r1(bmi(profile.weight, profile.height)), bmr: Math.round(b), k, tdee: Math.round(t), minKcal: Math.round(minCalories(profile.sex, b)), ...m, meals: mealLimits(m) };
   }
 
-  return { ACTIVITY, MEAL_SHARES, MEAL_ORDER, SEDENTARY_STEPS, bmi, bmr, activityFactor, tdee, minCalories, targetCalories,
+  // вода: 30 мл/кг, не больше 3,5 л; ручная норма из «Профиля» важнее
+  const waterNormMl = (weight, override) => (override > 0 ? Math.round(override) : Math.min(3500, Math.round(30 * (weight || 0))));
+  return { waterNormMl, ACTIVITY, MEAL_SHARES, MEAL_ORDER, SEDENTARY_STEPS, bmi, bmr, activityFactor, tdee, minCalories, targetCalories,
     paceCheck, macros, mealLimits, redistribute, color, weightTrend, autocorrect, isAutocorrectDue, needsRecalc, workoutBonus, plan };
 });

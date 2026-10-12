@@ -72,11 +72,15 @@
     ok.comeback = cb;
     return { ok, streak: st };
   }
-  function text(a, inp) { if (a.text) return a.text; const n = KG[inp.goal === 'gain' ? 'gain' : 'loss'][a.id];
-    return `${inp.goal === 'gain' ? 'Плюс' : 'Минус'} ${n} кг по тренду. Так держать!`; }
+  // тексты Нутрициолога для веса: свои для похудения и набора
+  const KG_TXT = { loss: { kg_1: ['Первый шаг', 'Минус 1 кг по тренду! Первый шаг сделан'], kg_5: ['Лёгкость', 'Минус 5 кг! Чувствуете лёгкость?'], kg_10: ['Новая форма', 'Минус 10 кг! Это уже новая форма'] },
+    gain: { kg_1: ['Первый шаг', 'Плюс 1 кг по тренду! Рост пошёл'], kg_5: ['Сила', 'Плюс 3 кг качественной массы!'], kg_10: ['Новая форма', 'Плюс 5 кг! Новая форма набирает силу'] } };
+  const dirOf = (inp) => (inp.goal === 'gain' ? 'gain' : 'loss');
+  function title(a, inp) { return KG_TXT.loss[a.id] ? KG_TXT[dirOf(inp)][a.id][0] : a.title; }
+  function text(a, inp) { return KG_TXT.loss[a.id] ? KG_TXT[dirOf(inp)][a.id][1] : a.text; }
   // Чекпоинт: history {id: date} не меняется, возвращаются новая история и только что выданные награды (каждая один раз).
   function check(inp, history = {}) { const { ok, streak } = conditions(inp); const h = { ...history }, fresh = [];
-    for (const a of LIST) if (ok[a.id] && !h[a.id]) { h[a.id] = inp.today; fresh.push({ id: a.id, title: a.title, text: text(a, inp), d: inp.today }); }
+    for (const a of LIST) if (ok[a.id] && !h[a.id]) { h[a.id] = inp.today; fresh.push({ id: a.id, title: title(a, inp), text: text(a, inp), d: inp.today }); }
     return { history: h, fresh, streak }; }
-  return { LIST, FREEZE_EVERY, streaks, conditions, check };
+  return { LIST, FREEZE_EVERY, streaks, conditions, check, title };
 });
