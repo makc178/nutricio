@@ -381,10 +381,20 @@ function actCard(k, a) { const wo = a?.workouts || [], mins = wo.reduce((s, w) =
   <div class="actc"><span class="ib" style="width:34px;height:34px;flex:none">${ic('trenirovka')}</span><div><b>${wo.length}${mins ? ` · ${mins}′` : ''}</b><span class="mut">${plural(wo.length, 'тренировка', 'тренировки', 'тренировок')}</span></div></div>
   <div class="actc"><span style="flex:none;display:flex">${FLAME}</span><div><b>${r0(ak)}</b><span class="mut">активных ккал</span></div></div></div>
   ${bn ? `<div class="actb2">+${bn} ккал к норме</div>` : ''}</div>`; }
+// карточка калорий, вариант D: тарелка в центре трёх колец (белки / жиры / углеводы)
+function stD(v, n, prot) { const q = n ? v / n : 0; return prot ? (q < 0.8 ? 'yellow' : 'green') : q < 0.9 ? 'green' : q <= 1.05 ? 'yellow' : 'red'; }
+function calCardD(k, t, norm) { const left = norm.kcal - t.kcal, q = norm.kcal ? t.kcal / norm.kcal : 0, kc = stD(t.kcal, norm.kcal);
+  const M = [['Белки', t.p, norm.p, 70, true], ['Жиры', t.f, norm.f, 58], ['Углеводы', t.c, norm.c, 46]];
+  const arc = (r, v, n, col) => { const L = 2 * Math.PI * r, f = Math.min(1, n ? v / n : 0); return `<circle cx="80" cy="80" r="${r}" fill="none" stroke="#EFE9DD" stroke-width="7"/>${f > 0 ? `<circle cx="80" cy="80" r="${r}" fill="none" stroke="${col}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(L * f).toFixed(1)} ${L.toFixed(1)}" transform="rotate(-90 80 80)"/>` : ''}`; };
+  const lbl = {green: 'в норме', yellow: 'почти норма', red: 'сверх нормы'}[kc];
+  return `<div class="card ccd" id="calCard"><div class="ccdh"><span class="ccst" style="color:${COL[kc]}"><i style="background:${COL[kc]}"></i>${r0(q * 100)}% · ${lbl}</span>${S.plan?.manual ? '<span class="ccman">✎ ручная норма</span>' : ''}</div>
+  <div class="ccb"><div class="ccr"><svg width="160" height="160" viewBox="0 0 160 160">${M.map(([, v, n, r, pr]) => arc(r, v, n, COL[stD(v, n, pr)])).join('')}<circle cx="80" cy="80" r="36" fill="#F6F1E7" stroke="#E4DCCB"/><circle cx="80" cy="80" r="29" fill="none" stroke="#C9A45C" stroke-width="1" stroke-dasharray="2 3"/></svg>
+  <div class="ccc"><b style="color:${left < 0 ? COL.red : 'inherit'}">${fmtN(r0(Math.abs(left)))}</b><span>${left >= 0 ? 'осталось' : 'сверх'}</span></div></div>
+  <div class="ccl">${M.map(([nm, v, n, , pr]) => { const s = stD(v, n, pr); return `<div class="ccm"><i style="background:${COL[s]}"></i><span class="sp">${nm}</span><b>${r0(v)}</b><span class="mut">/ ${r0(n)} г</span></div>${pr && v >= n && n ? '<div class="ccok">норма выполнена</div>' : ''}`; }).join('')}
+  <div class="mut" style="margin-top:6px">${fmtN(r0(t.kcal))} из ${fmtN(r0(norm.kcal))} ккал</div><div class="cckb"><i style="width:${Math.min(100, r0(q * 100))}%;background:${COL[kc]}"></i></div>${actBonus(k) ? `<div class="actb" style="margin-top:6px">+${actBonus(k)} ккал за активность</div>` : ''}</div></div></div>`; }
 function scrFood() { const k = DAY, {lim, eaten, norm} = mealLimitsFor(k), t = sumItems(dayItems(k)), dc = C.color(t.kcal, norm.kcal, 'kcal'), left = norm.kcal - t.kcal, st = streak(), isToday = k === dkey(), d = parseD(k), a = S.activity[k];
   return `<div class="scr"><div class="hd"><div><div class="row" style="gap:6px"><button class="lnk" data-act="day" data-n="-1" aria-label="Предыдущий день">‹</button><span class="mut">${isToday ? 'Сегодня, ' : ''}${d.toLocaleDateString('ru-RU', {weekday: 'long', day: 'numeric', month: 'long'})}</span>${isToday ? '' : '<button class="lnk" data-act="day" data-n="1" aria-label="Следующий день">›</button>'}</div><div class="h1">Питание</div></div>${st ? `<div style="font-weight:700;font-size:13px" class="gold">🔥 ${st} ${plural(st, 'день', 'дня', 'дней')}</div>` : ''}</div>
-  <div class="card row" style="gap:14px"><div class="ring">${ring(t.kcal, norm.kcal, COL[dc])}<div><b style="font-size:26px">${r0(Math.abs(left))}</b><span class="mut">${left >= 0 ? 'осталось ккал' : 'сверх нормы'}</span><span style="font-size:11px;font-weight:600">${r0(t.kcal)} / ${r0(norm.kcal)}</span>${actBonus(k) ? `<span class="actb">+${actBonus(k)} ккал за активность</span>` : ''}${S.plan?.manual ? '<span class="mnl">ручная норма</span>' : ''}</div></div>
-  <div class="sp">${barH('Белки', t.p, norm.p, 'p')}${barH('Жиры', t.f, norm.f, 'f')}${barH('Углеводы', t.c, norm.c, 'c')}</div></div>
+  ${calCardD(k, t, norm)}
   ${tips().map(x => `<div class="tip">💡 ${esc(x)}</div>`).join('')}
   ${MEALS.map(([m, tn, icn]) => { const e = eaten[m], l = lim[m], c = C.color(e.kcal, l.kcal, 'kcal'), items = dayItems(k).filter(x => x.meal === m);
     return `<div class="card row" style="padding:12px 14px;cursor:pointer" data-act="meal" data-m="${m}"><div class="ib">${ic(icn)}</div><div class="sp"><div style="display:flex;justify-content:space-between"><b style="font-size:15px">${tn}</b><b style="font-size:14px;color:${e.kcal ? COL[c] : 'var(--mut)'}">${r0(e.kcal)} / ${r0(l.kcal)}</b></div>
@@ -438,7 +448,55 @@ function manualSheet(photoId) { sheet(`<div class="hd"><div><div class="mut">${M
 function pickImage(cb, capture) { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; if (capture) i.capture = 'environment'; i.onchange = () => i.files[0] && cb(i.files[0]); i.click(); }
 async function shrink(file, max = 1280) { const bmp = await createImageBitmap(file); const k = Math.min(1, max / Math.max(bmp.width, bmp.height)); const cv = document.createElement('canvas'); cv.width = r0(bmp.width * k); cv.height = r0(bmp.height * k); cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
   return new Uint8Array(await (await new Promise(r => cv.toBlob(r, 'image/jpeg', .82))).arrayBuffer()); }
-function photoAdd() { pickImage(async f => { try { const bytes = await shrink(f); const id = uid(); await idb.set('dish:' + id, await seal(KEY, bytes)); manualSheet(id); } catch (e) { toast('Не удалось сохранить фото'); } }, true); }
+let PH_MODE = 'dish';
+function photoDish(f) { (async () => { try { const bytes = await shrink(f); const id = uid(); await idb.set('dish:' + id, await seal(KEY, bytes)); manualSheet(id); } catch (e) { toast('Не удалось сохранить фото'); } })(); }
+function photoAdd() { sheet(`<div class="hd"><div><div class="mut">${MNAME[CUR_MEAL]}</div><div class="h1" style="font-size:21px">Фото</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
+  <div style="padding:0 16px"><div class="seg phseg" id="phSeg"><button data-m="dish" class="${PH_MODE === 'dish' ? 'on' : ''}">Блюдо</button><button data-m="label" class="${PH_MODE === 'label' ? 'on' : ''}">Этикетка</button></div>
+  <div class="vf" id="vf"><i class="c1"></i><i class="c2"></i><i class="c3"></i><i class="c4"></i><img id="vfi" alt="" hidden><div class="vfh" id="vfh">${PH_MODE === 'label' ? 'Наведите на штрихкод или таблицу КБЖУ' : 'Сфотографируйте блюдо целиком'}</div></div>
+  <button class="btn" id="phShot" style="margin-top:12px">Сделать фото</button><button class="btn sec" id="phPick" style="margin-top:8px">Выбрать из галереи</button>
+  <p class="mut" style="margin:10px 4px 0;text-align:center">${PH_MODE === 'label' ? 'Фото обрабатывается на телефоне и никуда не отправляется. В интернет уходит только номер штрихкода.' : 'Фото хранится зашифрованным в вашем дневнике.'}</p></div>`);
+  document.querySelectorAll('#phSeg [data-m]').forEach(b => b.onclick = () => { PH_MODE = b.dataset.m; photoAdd(); });
+  const go = cap => pickImage(f => PH_MODE === 'label' ? labelProcess(f) : photoDish(f), cap); $('#phShot').onclick = () => go(true); $('#phPick').onclick = () => go(false); $('#vf').onclick = () => go(true); }
+const VEND = 'vendor/';
+function loadScript(src) { return new Promise((ok, no) => { if (document.querySelector(`script[src="${src}"]`)) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error('нет ' + src)); document.head.appendChild(s); }); }
+async function scanBarcode(file) { const fm = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
+  try { if ('BarcodeDetector' in window) { const ok = await BarcodeDetector.getSupportedFormats(); if (fm.some(x => ok.includes(x))) { const r = await new BarcodeDetector({formats: fm.filter(x => ok.includes(x))}).detect(await createImageBitmap(file)); const c = r.map(x => x.rawValue).find(LB.validEan); if (c) return c; } } } catch (e) {}
+  try { await loadScript(VEND + 'zxing/reader.js'); const Z = window.ZXingWASM; Z.setZXingModuleOverrides({locateFile: (p, pre) => p.endsWith('.wasm') ? new URL(VEND + 'zxing/zxing_reader.wasm', location.href).href : pre + p});
+    const rd = Z.readBarcodes || Z.readBarcodesFromImageFile; const r = await rd(file, {formats: ['EAN13', 'EAN8', 'UPCA', 'UPCE'], tryHarder: true, maxNumberOfSymbols: 1}); const c = (r || []).map(x => x.text).find(LB.validEan); if (c) return c; } catch (e) { console.warn('zxing', e); }
+  return null; }
+async function offLookup(code) { const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 9000);
+  try { const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_ru,brands,quantity,product_quantity,serving_quantity,nutriments`, {signal: ac.signal}); if (!r.ok) return null; return LB.fromOff(await r.json()); } catch (e) { return null; } finally { clearTimeout(tm); } }
+let OCRW = null;
+async function ocrText(file) { await loadScript(VEND + 'ocr/tesseract.min.js'); const base = new URL(VEND + 'ocr/', location.href).href;
+  if (!OCRW) OCRW = await Tesseract.createWorker(['rus', 'eng'], 1, {workerPath: base + 'worker.min.js', corePath: base, langPath: base, gzip: true, workerBlobURL: false});
+  const bmp = await createImageBitmap(file), k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height)), cv = document.createElement('canvas'); cv.width = r0(bmp.width * k); cv.height = r0(bmp.height * k);
+  const g = cv.getContext('2d'); g.filter = 'grayscale(1) contrast(1.4)'; g.drawImage(bmp, 0, 0, cv.width, cv.height); return (await OCRW.recognize(cv)).data.text; }
+async function labelProcess(file) { if (!$('#vf')) { PH_MODE = 'label'; photoAdd(); } const st = m => { const h = $('#vfh'); if (h) { h.textContent = m; h.classList.add('busy'); } };
+  try { const im = $('#vfi'); if (im) { im.src = URL.createObjectURL(file); im.hidden = false; } } catch (e) {}
+  st('Ищу штрихкод…'); const code = await scanBarcode(file); let res = null, src = 'label';
+  if (code) { st(`Штрихкод ${code} — ищу в Open Food Facts…`); const o = await offLookup(code); if (o && o.kcal != null) { res = o; src = 'barcode'; } }
+  if (!res) { st('Читаю таблицу КБЖУ… (первый раз до 30 секунд)'); try { const x = LB.parseText(await ocrText(file)); res = {name: '', ...x}; } catch (e) { console.warn(e); res = {name: '', kcal: null, p: null, f: null, c: null}; } }
+  labelResult(res, src, code); }
+function labelResult(x, src, code) { const old = code && S.customFoods.find(f => f.barcode === code); const def = x.pack || x.portion || 100, mx = Math.max(1000, def);
+  const fld = (k, l) => `<label class="fld"><span>${l}</span><input id="lb_${k}" inputmode="decimal" value="${x[k] != null ? String(x[k]).replace('.', ',') : ''}"></label>`;
+  sheet(`<div class="hd"><div><div class="mut">${MNAME[CUR_MEAL]}</div><div class="h1" style="font-size:20px">Этикетка</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
+  <div class="card lbres"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px"><span class="pill ${src === 'barcode' ? '' : 'lbocr'}">${src === 'barcode' ? 'штрихкод' : 'по этикетке'}</span>${code ? `<span class="mut">${code}</span>` : ''}</div>
+  <label class="fld"><span>Название</span><input id="lb_name" autocomplete="off" placeholder="Например, йогурт натуральный" value="${esc(x.name || old?.name || '')}"></label>
+  <div class="mut" style="margin:2px 0 6px"><b>На 100 г</b> — проверьте и поправьте, если нужно</div>
+  <div class="g2">${fld('kcal', 'Ккал')}${fld('p', 'Белки, г')}</div><div class="g2">${fld('f', 'Жиры, г')}${fld('c', 'Углеводы, г')}</div><div id="lbw" class="lbw" hidden></div></div>
+  <div class="card"><div class="row" style="justify-content:space-between"><b>Съели</b><span><input id="lb_g" class="lbg" inputmode="numeric" value="${def}"> г</span></div><input type="range" id="lb_r" min="1" max="${mx}" step="1" value="${def}" style="width:100%;accent-color:var(--gold)">
+  <div class="mut">${x.pack ? `Вес упаковки ${x.pack} г` : x.portion ? `Порция ${x.portion} г` : 'Вес упаковки не найден — укажите сколько съели'}</div><div id="lbv" style="font-weight:700;margin-top:6px"></div></div>
+  <div style="padding:0 16px"><button class="btn goldb" id="lbSave">Сохранить в мою базу</button><div class="mut" style="text-align:center;margin-top:6px">и добавить в ${MNAME[CUR_MEAL].toLowerCase()}</div></div>`);
+  const v = k => num($('#lb_' + k).value), cur = () => ({kcal: v('kcal'), p: v('p'), f: v('f'), c: v('c')});
+  const upd = () => { const c = cur(), ch = LB.check(c), w = $('#lbw'), bad = c.kcal != null && !ch.missing && !ch.ok; $('#lb_kcal').classList.toggle('lbbad', bad);
+    if (bad) { w.hidden = false; w.textContent = `Калории не сходятся с БЖУ: по белкам, жирам и углеводам выходит ≈${ch.calc} ккал. Проверьте цифры.`; } else if (ch.missing) { w.hidden = false; w.textContent = 'Не всё удалось прочитать — заполните пустые поля по этикетке.'; } else w.hidden = true;
+    const g = num($('#lb_g').value) || 0, k = g / 100; $('#lbv').textContent = c.kcal != null ? `${r0(c.kcal * k)} ккал · Б ${r1((c.p || 0) * k)} · Ж ${r1((c.f || 0) * k)} · У ${r1((c.c || 0) * k)}` : ''; };
+  ['kcal', 'p', 'f', 'c'].forEach(k => $('#lb_' + k).oninput = upd); $('#lb_r').oninput = () => { $('#lb_g').value = $('#lb_r').value; upd(); }; $('#lb_g').oninput = () => { const g = num($('#lb_g').value); if (g) $('#lb_r').value = Math.min(g, mx); upd(); }; upd();
+  $('#lbSave').onclick = async () => { const name = $('#lb_name').value.trim(), c = cur(), g = num($('#lb_g').value);
+    if (!name) { $('#lb_name').focus(); return toast('Введите название'); } if (c.kcal == null || c.p == null || c.f == null || c.c == null) return toast('Заполните ккал и БЖУ на 100 г'); if (!(g > 0)) return toast('Укажите, сколько граммов съели');
+    const food = {name: name.slice(0, 120), per: '100g', kcal: c.kcal, p: c.p, f: c.f, c: c.c, src: src, barcode: code || undefined, pack: x.pack || undefined};
+    const i = S.customFoods.findIndex(f => (code && f.barcode === code) || f.name === food.name); if (i >= 0) S.customFoods[i] = {...S.customFoods[i], ...food}; else S.customFoods.push({id: uid(), ...food});
+    const k = g / 100; await addItem({name: food.name, g, kcal: c.kcal * k, p: c.p * k, f: c.f * k, c: c.c * k, src: 'label'}); }; }
 let RESTDB = null;
 async function loadRest() { if (RESTDB) return RESTDB; try { const r = await fetch('data/restaurants.json'); if (!r.ok) throw 0; const j = await r.json(); RESTDB = j.restaurants || j; } catch (e) { RESTDB = []; } return RESTDB; }
 async function restSheet() { const pub = await loadRest(); const all = pub.map(r => ({...r, pub: 1})).concat(S.restaurants || []);
