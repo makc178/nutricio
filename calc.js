@@ -74,7 +74,7 @@
   function macros({ goal, weight, height, targetWeight, kcal, workoutHours = 0 }) {
     const protW = bmi(weight, height) > 30 && targetWeight ? targetWeight : weight;
     const p = PROTEIN_G_PER_KG[goal] * protW;
-    const f = Math.max(0.9 * weight, 0.8 * weight, (0.20 * kcal) / KCAL.f);
+    const f = Math.min(Math.max(0.9 * weight, 0.8 * weight, (0.20 * kcal) / KCAL.f), (0.35 * kcal) / KCAL.f); // §5 + потолок 35% ккал (подтверждено Нутрициологом)
     const c = Math.max(0, (kcal - p * KCAL.p - f * KCAL.f) / KCAL.c);
     const fiber = Math.max(25, (14 * kcal) / 1000);
     const waterMl = 30 * weight + 500 * workoutHours;
