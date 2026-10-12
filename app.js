@@ -227,32 +227,62 @@ function sheet(html) { closeSheet(); const o = document.createElement('div'); o.
   o.onclick = e => { if (e.target === o || e.target.closest('[data-close]')) closeSheet(); }; document.body.appendChild(o);
   o.querySelectorAll('[data-act]').forEach(b => b.onclick = e => ACTIONS[b.dataset.act](b.dataset, e)); return o; }
 function closeSheet() { const o = $('#ov'); if (o) o.remove(); }
-/* ---------- анкета ---------- */
+/* ---------- анкета (макет form_onepage) ---------- */
+const OI = {
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/>',
+  target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".8" fill="currentColor"/>',
+  ruler: '<path d="M3 9h18v6H3z"/><path d="M7 9v3M11 9v3M15 9v3M19 9v2"/>',
+  scale: '<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 10a3 3 0 0 1 6 0M12 10l1.5-1.5"/>',
+  tape: '<path d="M8 3c-2 4-2 14 0 18M16 3c2 4 2 14 0 18"/><path d="M6 12h12" stroke-dasharray="2 2"/>',
+  steps: '<path d="M8 3c2 0 3 2 3 5s-1 5-3 5-3-2-3-5 1-5 3-5zM6 15.5h4V18a2 2 0 0 1-4 0zM16 7c2 0 3 2 3 5s-1 5-3 5-3-2-3-5 1-5 3-5zM14 19.5h4V21"/>',
+  gym: '<path d="M6 8v8M3 10v4M18 8v8M21 10v4M6 12h12"/>',
+  leaf: '<path d="M12 4c5 0 8 3 8 8s-3 8-8 8-8-3-8-8"/><path d="M4 12c0-4 2-7 6-8-1 3 0 6 2 8"/>',
+  chart: '<path d="M4 4v16h16"/><path d="M7 15l4-4 3 3 5-6"/>',
+  drop: '<path d="M12 3c4 5 6 8 6 11a6 6 0 0 1-12 0c0-3 2-6 6-11z"/>'};
+const oi = (k, s = 20, col = '#4F6B45') => `<span style="display:inline-flex;width:${s}px;height:${s}px;color:${col};flex:none"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${OI[k]}</svg></span>`;
+const ohd = (k, t, extra = '') => `<div class="ohd"><div class="oib">${oi(k)}</div><b>${t}</b>${extra}</div>`;
+const ACT_UI = [['sedentary', 'Сидячая', 'меньше 5 тыс. шагов в день', 'steps'], ['light', 'Лёгкая', 'до 7 тыс. шагов или 1–3 тренировки', 'steps'], ['moderate', 'Средняя', '7–10 тыс. шагов или 3–5 тренировок', 'steps'], ['high', 'Высокая', 'больше 10 тыс. шагов или 6–7 тренировок', 'gym'], ['very_high', 'Очень высокая', 'физический труд или 2 тренировки в день', 'gym']];
+const SEX_SVG = {female: '<svg viewBox="0 0 60 70" width="24" height="28" fill="none" stroke="#4F6B45" stroke-width="2" stroke-linecap="round"><circle cx="30" cy="16" r="9"/><path d="M21 14c0-10 18-10 18 0 2 6 4 9 6 10M12 66c0-14 7-24 18-24s18 10 18 24"/><path d="M30 42v8" stroke="#C9A45C"/></svg>',
+  male: '<svg viewBox="0 0 60 70" width="24" height="28" fill="none" stroke="#4F6B45" stroke-width="2" stroke-linecap="round"><circle cx="30" cy="17" r="9"/><path d="M22 12c3-5 13-5 16 0M10 66c0-15 8-24 20-24s20 9 20 24"/><path d="M24 44l6 6 6-6" stroke="#C9A45C"/></svg>'};
+const GOAL_SVG = {loss: '<path d="M8 30c8-2 14 4 24 0" stroke="#C9A45C"/>', maintain: '<path d="M8 24h24M8 32h24" stroke="#C9A45C"/>', gain: '<path d="M8 34c8 0 14-10 24-12" stroke="#C9A45C"/>'};
+const otile = (name, label, ic, unit, val, mode = 'decimal', cls = '') => `<label class="otile ${cls}"><span class="l">${oi(ic, 15)}${label}</span><span class="v"><input name="${name}" inputmode="${mode}" autocomplete="off" value="${esc(val ?? '')}" placeholder="—"><small>${unit}</small></span></label>`;
 function onboarding(edit) { const p = S.profile || {};
-  app().innerHTML = `<div class="scr" style="padding-bottom:30px"><div class="hd"><div><div class="mut">${edit ? 'Профиль' : 'Добро пожаловать'}</div><div class="h1">${edit ? 'Параметры и цель' : 'Расскажите о себе'}</div></div></div>
-  <form id="ob"><div class="card"><h3>Исходные параметры</h3>
-  <div class="seg" id="sex">${[['female', 'Женщина'], ['male', 'Мужчина']].map(([v, t]) => `<button type="button" data-v="${v}" class="${p.sex === v ? 'on' : ''}">${t}</button>`).join('')}</div>
-  <div class="g3"><label class="fld"><span>Возраст, лет</span><input name="age" inputmode="numeric" required value="${esc(S.profile ? pAge(p) : '')}"></label><label class="fld"><span>Рост, см</span><input name="height" inputmode="decimal" required value="${esc(p.height || '')}"></label><label class="fld"><span>Вес, кг</span><input name="weight" inputmode="decimal" required value="${esc(edit ? lastWeight() : '')}"></label></div>
-  ${edit ? '' : `<div class="mut" style="margin:4px 0 8px">Обхваты, см (можно позже)</div><div class="g3">${VOL.map(([k, t]) => `<label class="fld"><span>${t}</span><input name="${k}" inputmode="decimal"></label>`).join('')}</div>`}
-  <label class="fld"><span>Активность</span><select name="activity">${ACT.map(([v, t]) => `<option value="${v}" ${(p.activity || 'light') === v ? 'selected' : ''}>${esc(t.split(':')[0])}</option>`).join('')}</select><small class="mut" id="actd" style="display:block;margin-top:5px"></small></label></div>
-  <div class="card"><h3>Цель</h3><div class="seg" id="goal">${[['loss', 'Похудеть'], ['maintain', 'Поддерживать'], ['gain', 'Набрать']].map(([v, t]) => `<button type="button" data-v="${v}" class="${(p.goal || 'loss') === v ? 'on' : ''}">${t}</button>`).join('')}</div>
-  <div id="tgt"><label class="fld"><span>Целевой вес, кг</span><input name="targetWeight" inputmode="decimal" value="${esc(p.targetWeight || '')}"></label><div class="fld"><span>Желаемый срок</span><div class="seg seg-in" id="dl">${[['1', '1 мес'], ['3', '3 мес'], ['6', '6 мес'], ['own', 'свой']].map(([v, t]) => `<button type="button" data-v="${v}">${t}</button>`).join('')}</div><label id="dlw" style="display:none;margin-top:8px"><input name="weeks" inputmode="numeric" placeholder="Сколько недель"></label><div id="pace" style="display:none;margin-top:6px;font-size:13px;color:var(--sage)"></div></div></div>
-  <div id="obm" class="mut"></div></div><div style="padding:0 16px"><button class="btn" type="submit">${edit ? 'Сохранить и пересчитать' : 'Рассчитать мою норму'}</button>${edit ? '<button type="button" class="btn sec" style="margin-top:10px" id="obc">Отмена</button>' : ''}</div></form></div>`;
-  let sex = p.sex, goal = p.goal || 'loss';
+  const goal0 = p.goal || 'loss', act0 = p.activity || 'light';
+  app().innerHTML = `<div class="onb"><div class="ohero">${LOGO ? `<div class="ologo">${LOGO}</div>` : ''}<div class="mut" style="font-size:13px">${edit ? 'Профиль' : 'Добро пожаловать в <b style="color:var(--ink)">Nutri<span style="color:var(--btn)">cio</span></b>'}</div><div class="oh1">${edit ? 'Параметры и цель' : 'Расскажите о себе'}</div>${edit ? '' : '<div class="mut" style="margin-top:6px;max-width:230px;font-size:13.5px">2 минуты — и мы рассчитаем вашу норму</div>'}</div>
+  <form id="ob" novalidate><div class="card ocard">${ohd('user', 'Исходные параметры')}
+  <div class="oseg" id="sex">${[['female', 'Женщина'], ['male', 'Мужчина']].map(([v, t]) => `<button type="button" data-v="${v}" class="${p.sex === v ? 'on' : ''}">${SEX_SVG[v]}${t}</button>`).join('')}</div>
+  <div class="orow">${otile('age', 'Возраст', 'target', 'лет', S.profile ? pAge(p) : '', 'numeric')}${otile('height', 'Рост', 'ruler', 'см', p.height)}${otile('weight', 'Вес', 'scale', 'кг', edit ? lastWeight() : '')}</div></div>
+  ${edit ? '' : `<div class="card ocard">${ohd('tape', 'Обхваты', '<span class="mut">можно позже</span>')}<div style="display:flex;gap:10px;align-items:center"><svg viewBox="0 0 40 80" width="34" height="68" fill="none" stroke="#7A9A6E" stroke-width="1.6" style="flex:none"><circle cx="20" cy="8" r="5"/><path d="M12 18h16l3 22-4 2-1 36h-5l-1-26-1 26h-5l-1-36-4-2z"/><path d="M11 30h18M12 40h16M13 46h14" stroke="#C9A45C" stroke-dasharray="2 2"/></svg><div class="ogrid">${VOL.map(([k, t]) => otile(k, t, 'tape', 'см', '', 'decimal', 'sm')).join('')}</div></div></div>`}
+  <div class="card ocard">${ohd('steps', 'Активность')}<div id="act">${ACT_UI.map(([v, t, d, ic], i) => `<button type="button" class="oact ${act0 === v ? 'sel' : ''}" data-v="${v}"><div class="oib" style="width:36px;height:36px">${oi(ic)}</div><div style="flex:1;min-width:0;text-align:left"><b>${t}</b><div class="mut">${d}</div></div><div class="obars">${[6, 10, 14, 18, 22].map((h, j) => `<i style="height:${h}px;background:${j <= i ? '#4F6B45' : '#DDD6C6'}"></i>`).join('')}</div></button>`).join('')}</div><input type="hidden" name="activity" value="${act0}">
+  <div class="onote">${oi('leaf', 18)}<span>«Здоровье» уточнит уровень автоматически</span></div></div>
+  <div class="card ocard">${ohd('target', 'Цель')}<div class="oseg" id="goal">${[['loss', 'Похудеть'], ['maintain', 'Поддерживать'], ['gain', 'Набрать']].map(([v, t]) => `<button type="button" data-v="${v}" class="og ${goal0 === v ? 'on' : ''}"><svg viewBox="0 0 40 44" width="20" height="22" fill="none" stroke="#4F6B45" stroke-width="2" stroke-linecap="round"><path d="M20 4c8 2 12 8 10 14-8-1-12-7-10-14z" fill="#7A9A6E55"/>${GOAL_SVG[v]}</svg><span>${t}</span></button>`).join('')}</div>
+  <div id="tgt"><div class="orow" style="margin-bottom:12px"><div class="otile"><span class="l">${oi('scale', 15)}Сейчас</span><span class="v"><span id="wNow">—</span><small>кг</small></span></div>${otile('targetWeight', 'Целевой вес', 'target', 'кг', p.targetWeight, 'decimal', 'sel')}</div>
+  <div class="l mut" style="display:flex;gap:4px;margin-bottom:6px">${oi('chart', 15)}Желаемый срок</div><div class="ochips" id="dl">${[['1', '1 мес'], ['3', '3 мес'], ['6', '6 мес'], ['own', 'свой']].map(([v, t]) => `<button type="button" data-v="${v}">${t}</button>`).join('')}</div>
+  <label id="dlw" class="otile" style="display:none;margin-bottom:10px"><span class="l">Свой срок</span><span class="v"><input name="weeks" inputmode="numeric" placeholder="—"><small>недель</small></span></label>
+  <svg id="ochart" viewBox="0 0 300 70" width="100%" height="64" preserveAspectRatio="none" style="display:none"></svg>
+  <div id="pace" class="opace" style="display:none"></div></div>
+  <div id="obm" class="mut" style="margin-top:8px"></div></div>
+  <div style="padding:6px 16px calc(30px + env(safe-area-inset-bottom))"><button class="btn" type="submit" style="display:flex;gap:8px;justify-content:center;align-items:center">${oi('chart', 20, '#fff')}${edit ? 'Сохранить и пересчитать' : 'Рассчитать мою норму'}</button>${edit ? '<button type="button" class="btn sec" style="margin-top:10px" id="obc">Отмена</button>' : ''}</div></form></div>`;
+  let sex = p.sex, goal = goal0;
   const segs = (id, set) => document.querySelectorAll(`#${id} button`).forEach(b => b.onclick = () => { document.querySelectorAll(`#${id} button`).forEach(x => x.classList.remove('on')); b.classList.add('on'); set(b.dataset.v); });
-  segs('sex', v => sex = v); segs('goal', v => { goal = v; $('#tgt').style.display = v === 'maintain' ? 'none' : ''; }); $('#tgt').style.display = goal === 'maintain' ? 'none' : '';
-  const actd = () => { const t = (ACT.find(x => x[0] === $('#ob [name=activity]').value) || ['', ''])[1]; $('#actd').textContent = t.includes(':') ? t.split(':').slice(1).join(':').trim() : ''; }; $('#ob [name=activity]').onchange = actd; actd();
+  document.querySelectorAll('#act .oact').forEach(b => b.onclick = () => { document.querySelectorAll('#act .oact').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); $('#ob [name=activity]').value = b.dataset.v; });
+  segs('sex', v => sex = v); segs('goal', v => { goal = v; $('#tgt').style.display = v === 'maintain' ? 'none' : ''; pace(); }); $('#tgt').style.display = goal === 'maintain' ? 'none' : '';
   let DL = p.deadline || null; const wk = () => { const n = num($('#ob [name=weeks]').value); DL = n > 0 ? dkey(new Date(Date.now() + n * 7 * 864e5)) : null; };
-  if (p.deadline) { document.querySelector('#dl [data-v=own]').classList.add('on'); $('#dlw').style.display = ''; const n = Math.max(1, Math.round((new Date(p.deadline) - Date.now()) / (7 * 864e5))); $('#ob [name=weeks]').value = n; }
-  segs('dl', v => { $('#dlw').style.display = v === 'own' ? '' : 'none'; if (v === 'own') wk(); else { const d = new Date(); d.setMonth(d.getMonth() + +v); DL = dkey(d); } }); $('#ob [name=weeks]').oninput = () => { wk(); pace(); };
-  function pace() { const el = $('#pace'); const w = num($('#ob [name=weight]').value), tw = num($('#ob [name=targetWeight]').value);
-    if (goal === 'maintain' || !DL || !w || !tw || (goal === 'loss' ? tw >= w : tw <= w)) { el.style.display = 'none'; return; }
-    const need = Math.ceil(Math.abs(w - tw) / (w * (goal === 'loss' ? 0.01 : 0.005)));
+  if (p.deadline) { document.querySelector('#dl [data-v=own]').classList.add('on'); $('#dlw').style.display = ''; $('#ob [name=weeks]').value = Math.max(1, Math.round((new Date(p.deadline) - Date.now()) / (7 * 864e5))); }
+  segs('dl', v => { $('#dlw').style.display = v === 'own' ? '' : 'none'; if (v === 'own') wk(); else { const d = new Date(); d.setMonth(d.getMonth() + +v); DL = dkey(d); } pace(); });
+  $('#ob [name=weeks]').oninput = () => { wk(); pace(); };
+  function pace() { const el = $('#pace'), ch = $('#ochart'); const w = num($('#ob [name=weight]').value), tw = num($('#ob [name=targetWeight]').value);
+    $('#wNow').textContent = w ? String(w).replace('.', ',') : '—';
+    if (goal === 'maintain' || !DL || !w || !tw || (goal === 'loss' ? tw >= w : tw <= w)) { el.style.display = 'none'; ch.style.display = 'none'; return; }
+    const rate = w * (goal === 'loss' ? 0.01 : 0.005), need = Math.ceil(Math.abs(w - tw) / rate);
     const real = new Date(); real.setHours(0, 0, 0, 0); real.setDate(real.getDate() + need * 7);
-    if (new Date(DL) >= real) { el.style.display = 'none'; return; }
-    el.style.display = ''; el.innerHTML = `Реалистично к ${real.toLocaleDateString('ru-RU', {day: 'numeric', month: 'long', year: 'numeric'})} <button type="button" id="paceOk" style="border:0;background:none;padding:0 0 0 6px;color:var(--gold,#D9A93A);font-weight:700;text-decoration:underline;cursor:pointer">Выбрать</button>`;
+    const dlD = new Date(DL), ok = dlD >= real, span = Math.max(real - Date.now(), dlD - Date.now()), x = d => Math.max(8, Math.min(292, 300 * (d - Date.now()) / span));
+    const y0 = goal === 'loss' ? 12 : 58, y1 = goal === 'loss' ? 58 : 12;
+    ch.style.display = ''; ch.innerHTML = `<path d="M0 ${y0} C${x(real) * .3} ${y0 + (y1 - y0) * .15} ${x(real) * .6} ${y0 + (y1 - y0) * .8} ${x(real)} ${y1}" stroke="#4F6B45" stroke-width="3" fill="none" stroke-linecap="round"/>${ok ? '' : `<path d="M0 ${y0} L${x(dlD)} ${y1}" stroke="#C9A45C" stroke-width="2" stroke-dasharray="5 5" fill="none"/>`}<circle cx="4" cy="${y0}" r="4" fill="#4F6B45"/><circle cx="${x(real)}" cy="${y1}" r="5" fill="#4F6B45"/>`;
+    if (ok) { el.style.display = 'none'; return; }
+    el.style.display = ''; el.innerHTML = `<b>Реалистично к ${real.toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'})}${real.getFullYear() !== new Date().getFullYear() ? ' ' + real.getFullYear() : ''}</b> — ${String(r1(rate)).replace('.', ',')} кг в неделю, бережно ${goal === 'loss' ? 'для мышц' : 'без лишнего жира'}. <button type="button" id="paceOk">Выбрать →</button>`;
     $('#paceOk').onclick = () => { document.querySelectorAll('#dl button').forEach(x => x.classList.toggle('on', x.dataset.v === 'own')); $('#dlw').style.display = ''; $('#ob [name=weeks]').value = need; DL = dkey(real); pace(); }; }
-  document.querySelectorAll('#dl button').forEach(b => b.addEventListener('click', () => pace())); ['weight', 'targetWeight'].forEach(n => $(`#ob [name=${n}]`).addEventListener('input', pace)); document.querySelectorAll('#goal button').forEach(b => b.addEventListener('click', () => pace())); pace();
+  ['weight', 'targetWeight'].forEach(n => $(`#ob [name=${n}]`).addEventListener('input', pace)); pace();
   if ($('#obc')) $('#obc').onclick = () => { TAB = 'profile'; render(); };
   $('#ob').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target); const g = n => num(f.get(n)); const m = $('#obm'); m.style.color = 'var(--bad)';
     const ag = Math.round(g('age')), height = g('height'), weight = g('weight'), tw = g('targetWeight');
@@ -263,8 +293,23 @@ function onboarding(edit) { const p = S.profile || {};
     S.profile = {...p, sex, age0: ag, ageAt: (p.age0 === ag && p.ageAt) ? p.ageAt : dkey(), height, weight: edit ? p.weight : weight, activity: f.get('activity'), goal, targetWeight: goal === 'maintain' ? null : tw, deadline: goal === 'maintain' ? null : DL, startDate: p.startDate || dkey()};
     if (!edit) { const rec = {d: dkey(), weight}; for (const [k] of VOL) { const v = g(k); if (v) rec[k] = v; } S.measures.push(rec); }
     else { upsertMeasure({weight}); S.plan = {...(S.plan || {}), adj: 0}; }
-    recalcPlan(weight); await save(); TAB = 'food'; render(); planSheet(true); };
+    recalcPlan(weight); await save(); normaScreen(edit); };
 }
+function normaScreen(edit) { const pl = S.plan, kcal = r0(pl.kcal + (pl.adj || 0)); const kp = pl.p * 4, kf = pl.f * 9, kc = pl.c * 4, tot = kp + kf + kc || 1;
+  const R = 80, L = 2 * Math.PI * R; let off = 0; const seg = (v, col) => { const len = L * v / tot, gap = 4; const s = `<circle cx="100" cy="100" r="${R}" fill="none" stroke="${col}" stroke-width="18" stroke-dasharray="${Math.max(0, len - gap)} ${L}" stroke-dashoffset="${-off}" transform="rotate(-90 100 100)"/>`; off += len; return s; };
+  const ring = seg(kp, '#7A9A6E') + seg(kf, '#C9A45C') + seg(kc, '#A9C29C');
+  const mk = MEALS.map(([m, t]) => ({t, k: r0(pl.meals?.[m]?.kcal || 0)})); const mt = mk.reduce((s, x) => s + x.k, 0) || 1; const mcol = ['#7A9A6E', '#4F6B45', '#7A9A6E', '#C9A45C'];
+  closeSheet(); window.scrollTo(0, 0);
+  app().innerHTML = `<div class="onb norma"><div style="text-align:center;padding:calc(env(safe-area-inset-top) + 24px) 20px 6px"><div class="oh1" style="font-size:30px">Ваша норма</div><div class="mut" style="font-size:14px;margin-top:4px">на каждый день</div></div>
+  <div style="position:relative;width:200px;height:200px;margin:10px auto 14px"><svg viewBox="0 0 200 200" width="200" height="200">${ring}</svg><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-weight:800;font-size:40px;letter-spacing:-1px">${kcal.toLocaleString('ru-RU')}</div><div class="mut" style="font-size:13px">ккал в день</div></div></div>
+  <div class="orow" style="padding:0 16px;margin-bottom:10px">${[['Белки', pl.p, '#7A9A6E'], ['Жиры', pl.f, '#C9A45C'], ['Углеводы', pl.c, '#A9C29C']].map(([t, v, c]) => `<div class="card nmac"><i style="background:${c}"></i><div><b>${r0(v)}</b> <small>г</small></div><div class="mut">${t}</div></div>`).join('')}</div>
+  <div class="card" style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-radius:22px">${oi('drop', 20, '#5B8DB8')}<b style="flex:1;font-size:16px">Вода</b><b style="font-size:16px">${String((pl.waterMl / 1000).toFixed(1)).replace('.', ',')} л</b></div>
+  <div class="card" style="padding:16px 18px"><b style="font-size:15px">Распределение по приёмам</b><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px;text-align:center">${mk.map((x, i) => `<div><div style="height:9px;border-radius:5px;background:${mcol[i]};margin-bottom:6px"></div><b style="font-size:12.5px">${x.t}</b><div class="mut" style="font-size:11.5px">${r0(100 * x.k / mt)}% · ${x.k}</div></div>`).join('')}</div></div>
+  <p style="text-align:center;padding:4px 28px;line-height:1.45;font-size:14.5px">🌿 <b>${edit ? 'Норма пересчитана.' : 'Отличный старт!'}</b> Маленькие шаги каждый день — и цель придёт сама.</p>
+  <div style="padding:10px 16px 6px;text-align:center"><button type="button" class="lnk" id="normaMore">Подробнее о расчёте</button></div>
+  <div style="padding:6px 16px calc(24px + env(safe-area-inset-bottom))"><button class="btn" id="normaStart">${edit ? 'Готово' : 'Начать'}</button></div></div>`;
+  $('#normaStart').onclick = () => { TAB = edit ? 'profile' : 'food'; render(); };
+  $('#normaMore').onclick = () => planSheet(); }
 function upsertMeasure(v, d = dkey()) { let m = S.measures.find(x => x.d === d); if (!m) { m = {d}; S.measures.push(m); } Object.assign(m, v); }
 function planSheet(first) { const p = S.profile, pl = S.plan; const pc = C.paceCheck({goal: p.goal, weight: lastWeight(), targetWeight: p.targetWeight, today: new Date(), deadline: p.deadline ? parseD(p.deadline) : null});
   const yr = d => `${fmtD(d)} ${d.getFullYear()}`;
