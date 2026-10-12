@@ -8,7 +8,7 @@ const DATA_REPO = 'makc178/nutricio-data', BRANCH = 'main', ITER = 600000;
 const MEALS = [['breakfast','Завтрак','zavtrak'],['lunch','Обед','obed'],['dinner','Ужин','uzhin'],['snacks','Перекусы','perekus']];
 const MNAME = Object.fromEntries(MEALS.map(m => [m[0], m[1]]));
 const COL = {green:'#6E9A5A', yellow:'#D9A93A', red:'#C2553F'};
-const VOL = [['waist','Талия'],['hips','Бёдра'],['chest','Грудь'],['arm','Плечо'],['thigh','Бедро']];
+const VOL = [['waist','Талия'],['hips','Бёдра'],['chest','Грудь'],['arm','Плечо'],['thigh','Бедро (одна нога)']];
 const ACT = [['sedentary','Сидячий образ жизни'],['light','Лёгкая: до 7 тыс. шагов или 1–3 тренировки'],['moderate','Средняя: 7–10 тыс. или 3–5 тренировок'],['high','Высокая: больше 10 тыс. или 6–7 тренировок'],['very_high','Очень высокая']];
 const $ = s => document.querySelector(s), app = () => document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -38,7 +38,7 @@ async function open_(key, box) { return new Uint8Array(await crypto.subtle.decry
 
 let KEY = null, META = null, S = null, BPKEY = null, TAB = 'food', DAY = dkey(), PERIOD = 'week', VOLK = 'waist';
 const blank = () => ({v:1, created: Date.now(), updated: 0, profile: null, plan: null, measures: [], meals: {}, activity: {}, customFoods: [], restaurants: [], awarded: {}, sync: {token: '', last: 0}, log: []});
-async function save(local = false) { S.updated = Date.now(); await idb.set('state', {salt: META.salt, iter: META.iter, ...(await seal(KEY, enc.encode(JSON.stringify(S)))), updated: S.updated}); if (!local) schedSync(); }
+async function save(local = false) { if (!save.p && navigator.storage?.persist) { save.p = 1; navigator.storage.persist().catch(() => {}); } S.updated = Date.now(); await idb.set('state', {salt: META.salt, iter: META.iter, ...(await seal(KEY, enc.encode(JSON.stringify(S)))), updated: S.updated}); if (!local) schedSync(); }
 /* ---------- PIN ---------- */
 let pinBuf = '', pinMode = 'unlock', pinFirst = '', pinFails = 0, pinBusy = false, RESTORE = null;
 async function boot() {
@@ -162,7 +162,8 @@ const sumItems = items => items.reduce((a, x) => ({kcal: a.kcal + (x.kcal || 0),
 function series() { return [...S.measures].sort((a, b) => a.d < b.d ? -1 : 1); }
 function lastWeight() { const m = series().filter(x => x.weight); return m.length ? m[m.length - 1].weight : S.profile?.weight; }
 function age(bd) { const b = new Date(bd), n = new Date(); let a = n.getFullYear() - b.getFullYear(); if (n < new Date(n.getFullYear(), b.getMonth(), b.getDate())) a--; return a; }
-function recalcPlan(weight) { const p = S.profile; const prof = {sex: p.sex, age: age(p.birth), height: p.height, weight: weight ?? lastWeight(), activity: p.activity, goal: p.goal, targetWeight: p.targetWeight};
+function pAge(p) { if (p.age0 != null) { const a = new Date(p.ageAt), n = new Date(); let m = (n.getFullYear() - a.getFullYear()) * 12 + n.getMonth() - a.getMonth(); if (n.getDate() < a.getDate()) m--; return p.age0 + Math.floor(Math.max(0, m) / 12); } return pAge(p); }
+function recalcPlan(weight) { const p = S.profile; p.planAge = pAge(p); const prof = {sex: p.sex, age: pAge(p), height: p.height, weight: weight ?? lastWeight(), activity: p.activity, goal: p.goal, targetWeight: p.targetWeight};
   S.plan = {...C.plan(prof), weightAt: prof.weight, at: dkey(), adj: S.plan?.adj || 0, lastAuto: S.plan?.lastAuto}; }
 function dayNorm(k) { const pl = S.plan; if (!pl) return null; const kcal = pl.kcal + (pl.adj || 0); const scale = kcal / pl.kcal;
   let bonus = 0; if (S.profile?.workoutBonus) bonus = C.workoutBonus((S.activity[k]?.workouts || []).reduce((s, w) => s + (w.kcal || 0), 0));
@@ -214,7 +215,8 @@ function tips() { const k = dkey(), now = new Date(), h = now.getHours(), out = 
 
 /* ---------- каркас ---------- */
 async function start() { await hashImport(); if (!S.profile) return onboarding(); await maintenance(); await checkBadges(); render(); syncNow(); }
-function render() { const y = window.scrollY; app().innerHTML = (TAB === 'food' ? scrFood() : TAB === 'progress' ? scrProgress() : scrProfile()) + nav(); bind(); window.scrollTo(0, y);
+function render() { if (S?.profile && S.plan && S.profile.age0 != null && S.profile.planAge !== pAge(S.profile)) { recalcPlan(); save(); }
+  const y = window.scrollY; app().innerHTML = (TAB === 'food' ? scrFood() : TAB === 'progress' ? scrProgress() : scrProfile()) + nav(); bind(); window.scrollTo(0, y);
   if (TAB === 'profile') bindProfileForm(); if (TAB === 'progress' && BPKEY) bpRenderRow(); }
 function nav() { const b = (t, n, i) => `<button data-tab="${t}" class="${TAB === t ? 'on' : ''}">${ic(i)}${n}</button>`;
   return `<nav class="nav">${b('food', 'Питание', 'pitanie')}<button class="plus" id="plus" aria-label="Добавить">+</button>${b('progress', 'Прогресс', 'grafiki')}${b('profile', 'Профиль', 'profil')}</nav>`; }
@@ -230,24 +232,35 @@ function onboarding(edit) { const p = S.profile || {};
   app().innerHTML = `<div class="scr" style="padding-bottom:30px"><div class="hd"><div><div class="mut">${edit ? 'Профиль' : 'Добро пожаловать'}</div><div class="h1">${edit ? 'Параметры и цель' : 'Расскажите о себе'}</div></div></div>
   <form id="ob"><div class="card"><h3>Исходные параметры</h3>
   <div class="seg" id="sex">${[['female', 'Женщина'], ['male', 'Мужчина']].map(([v, t]) => `<button type="button" data-v="${v}" class="${p.sex === v ? 'on' : ''}">${t}</button>`).join('')}</div>
-  <div class="g2"><label class="fld"><span>Дата рождения</span><input name="birth" type="date" required value="${esc(p.birth || '')}"></label><label class="fld"><span>Рост, см</span><input name="height" inputmode="decimal" required value="${esc(p.height || '')}"></label></div>
-  <label class="fld"><span>Вес сейчас, кг</span><input name="weight" inputmode="decimal" required value="${esc(edit ? lastWeight() : '')}"></label>
+  <div class="g3"><label class="fld"><span>Возраст, лет</span><input name="age" inputmode="numeric" required value="${esc(S.profile ? pAge(p) : '')}"></label><label class="fld"><span>Рост, см</span><input name="height" inputmode="decimal" required value="${esc(p.height || '')}"></label><label class="fld"><span>Вес, кг</span><input name="weight" inputmode="decimal" required value="${esc(edit ? lastWeight() : '')}"></label></div>
   ${edit ? '' : `<div class="mut" style="margin:4px 0 8px">Обхваты, см (можно позже)</div><div class="g3">${VOL.map(([k, t]) => `<label class="fld"><span>${t}</span><input name="${k}" inputmode="decimal"></label>`).join('')}</div>`}
-  <label class="fld"><span>Активность</span><select name="activity">${ACT.map(([v, t]) => `<option value="${v}" ${(p.activity || 'light') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label></div>
+  <label class="fld"><span>Активность</span><select name="activity">${ACT.map(([v, t]) => `<option value="${v}" ${(p.activity || 'light') === v ? 'selected' : ''}>${esc(t.split(':')[0])}</option>`).join('')}</select><small class="mut" id="actd" style="display:block;margin-top:5px"></small></label></div>
   <div class="card"><h3>Цель</h3><div class="seg" id="goal">${[['loss', 'Похудеть'], ['maintain', 'Поддерживать'], ['gain', 'Набрать']].map(([v, t]) => `<button type="button" data-v="${v}" class="${(p.goal || 'loss') === v ? 'on' : ''}">${t}</button>`).join('')}</div>
-  <div class="g2" id="tgt"><label class="fld"><span>Целевой вес, кг</span><input name="targetWeight" inputmode="decimal" value="${esc(p.targetWeight || '')}"></label><label class="fld"><span>Желаемый срок</span><input name="deadline" type="date" value="${esc(p.deadline || '')}"></label></div>
+  <div id="tgt"><label class="fld"><span>Целевой вес, кг</span><input name="targetWeight" inputmode="decimal" value="${esc(p.targetWeight || '')}"></label><div class="fld"><span>Желаемый срок</span><div class="seg seg-in" id="dl">${[['1', '1 мес'], ['3', '3 мес'], ['6', '6 мес'], ['own', 'свой']].map(([v, t]) => `<button type="button" data-v="${v}">${t}</button>`).join('')}</div><label id="dlw" style="display:none;margin-top:8px"><input name="weeks" inputmode="numeric" placeholder="Сколько недель"></label><div id="pace" style="display:none;margin-top:6px;font-size:13px;color:var(--sage)"></div></div></div>
   <div id="obm" class="mut"></div></div><div style="padding:0 16px"><button class="btn" type="submit">${edit ? 'Сохранить и пересчитать' : 'Рассчитать мою норму'}</button>${edit ? '<button type="button" class="btn sec" style="margin-top:10px" id="obc">Отмена</button>' : ''}</div></form></div>`;
   let sex = p.sex, goal = p.goal || 'loss';
   const segs = (id, set) => document.querySelectorAll(`#${id} button`).forEach(b => b.onclick = () => { document.querySelectorAll(`#${id} button`).forEach(x => x.classList.remove('on')); b.classList.add('on'); set(b.dataset.v); });
   segs('sex', v => sex = v); segs('goal', v => { goal = v; $('#tgt').style.display = v === 'maintain' ? 'none' : ''; }); $('#tgt').style.display = goal === 'maintain' ? 'none' : '';
+  const actd = () => { const t = (ACT.find(x => x[0] === $('#ob [name=activity]').value) || ['', ''])[1]; $('#actd').textContent = t.includes(':') ? t.split(':').slice(1).join(':').trim() : ''; }; $('#ob [name=activity]').onchange = actd; actd();
+  let DL = p.deadline || null; const wk = () => { const n = num($('#ob [name=weeks]').value); DL = n > 0 ? dkey(new Date(Date.now() + n * 7 * 864e5)) : null; };
+  if (p.deadline) { document.querySelector('#dl [data-v=own]').classList.add('on'); $('#dlw').style.display = ''; const n = Math.max(1, Math.round((new Date(p.deadline) - Date.now()) / (7 * 864e5))); $('#ob [name=weeks]').value = n; }
+  segs('dl', v => { $('#dlw').style.display = v === 'own' ? '' : 'none'; if (v === 'own') wk(); else { const d = new Date(); d.setMonth(d.getMonth() + +v); DL = dkey(d); } }); $('#ob [name=weeks]').oninput = () => { wk(); pace(); };
+  function pace() { const el = $('#pace'); const w = num($('#ob [name=weight]').value), tw = num($('#ob [name=targetWeight]').value);
+    if (goal === 'maintain' || !DL || !w || !tw || (goal === 'loss' ? tw >= w : tw <= w)) { el.style.display = 'none'; return; }
+    const need = Math.ceil(Math.abs(w - tw) / (w * (goal === 'loss' ? 0.01 : 0.005)));
+    const real = new Date(); real.setHours(0, 0, 0, 0); real.setDate(real.getDate() + need * 7);
+    if (new Date(DL) >= real) { el.style.display = 'none'; return; }
+    el.style.display = ''; el.innerHTML = `Реалистично к ${real.toLocaleDateString('ru-RU', {day: 'numeric', month: 'long', year: 'numeric'})} <button type="button" id="paceOk" style="border:0;background:none;padding:0 0 0 6px;color:var(--gold,#D9A93A);font-weight:700;text-decoration:underline;cursor:pointer">Выбрать</button>`;
+    $('#paceOk').onclick = () => { document.querySelectorAll('#dl button').forEach(x => x.classList.toggle('on', x.dataset.v === 'own')); $('#dlw').style.display = ''; $('#ob [name=weeks]').value = need; DL = dkey(real); pace(); }; }
+  document.querySelectorAll('#dl button').forEach(b => b.addEventListener('click', () => pace())); ['weight', 'targetWeight'].forEach(n => $(`#ob [name=${n}]`).addEventListener('input', pace)); document.querySelectorAll('#goal button').forEach(b => b.addEventListener('click', () => pace())); pace();
   if ($('#obc')) $('#obc').onclick = () => { TAB = 'profile'; render(); };
   $('#ob').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target); const g = n => num(f.get(n)); const m = $('#obm'); m.style.color = 'var(--bad)';
-    const birth = f.get('birth'), height = g('height'), weight = g('weight'), tw = g('targetWeight');
+    const ag = Math.round(g('age')), height = g('height'), weight = g('weight'), tw = g('targetWeight');
     if (!sex) return m.textContent = 'Выберите пол — он нужен для формулы обмена веществ';
-    if (!birth || !(age(birth) >= 14 && age(birth) <= 100)) return m.textContent = 'Проверьте дату рождения';
+    if (!(ag >= 14 && ag <= 100)) return m.textContent = 'Возраст — от 14 до 100 лет';
     if (!height || height < 120 || height > 230) return m.textContent = 'Рост — от 120 до 230 см'; if (!weight || weight < 30 || weight > 300) return m.textContent = 'Вес — от 30 до 300 кг';
     if (goal !== 'maintain' && (!tw || (goal === 'loss' ? tw >= weight : tw <= weight))) return m.textContent = goal === 'loss' ? 'Целевой вес должен быть меньше текущего' : 'Целевой вес должен быть больше текущего';
-    S.profile = {...p, sex, birth, height, weight: edit ? p.weight : weight, activity: f.get('activity'), goal, targetWeight: goal === 'maintain' ? null : tw, deadline: goal === 'maintain' ? null : f.get('deadline') || null, startDate: p.startDate || dkey()};
+    S.profile = {...p, sex, age0: ag, ageAt: (p.age0 === ag && p.ageAt) ? p.ageAt : dkey(), height, weight: edit ? p.weight : weight, activity: f.get('activity'), goal, targetWeight: goal === 'maintain' ? null : tw, deadline: goal === 'maintain' ? null : DL, startDate: p.startDate || dkey()};
     if (!edit) { const rec = {d: dkey(), weight}; for (const [k] of VOL) { const v = g(k); if (v) rec[k] = v; } S.measures.push(rec); }
     else { upsertMeasure({weight}); S.plan = {...(S.plan || {}), adj: 0}; }
     recalcPlan(weight); await save(); TAB = 'food'; render(); planSheet(true); };
@@ -447,7 +460,8 @@ function scrProfile() { const p = S.profile, pl = S.plan, appUrl = location.orig
   return `<div class="scr"><div class="hd"><div class="h1">Профиль</div><button class="btn sm sec" data-act="lock">Заблокировать</button></div>
   <div class="card"><h3>Норма на день <button class="lnk" data-act="plan">подробнее</button></h3><div class="g3" style="grid-template-columns:repeat(4,1fr);text-align:center">${[['ккал', pl.kcal + (pl.adj || 0)], ['Б, г', pl.p], ['Ж, г', pl.f], ['У, г', pl.c]].map(([t, v]) => `<div><b style="font-size:17px">${r0(v)}</b><div class="mut">${t}</div></div>`).join('')}</div>
   ${pl.adj ? `<div class="mut" style="margin-top:8px">С учётом автокоррекции ${pl.adj > 0 ? '+' : ''}${pl.adj} ккал</div>` : ''}</div>
-  <div class="card"><h3>Параметры</h3><div class="mut" style="line-height:1.7">${p.sex === 'male' ? 'Мужчина' : 'Женщина'}, ${age(p.birth)} ${plural(age(p.birth), 'год', 'года', 'лет')}, ${p.height} см, ${r1(lastWeight())} кг<br>Цель: ${{loss: 'похудеть', maintain: 'поддерживать вес', gain: 'набрать'}[p.goal]}${p.targetWeight ? ` до ${p.targetWeight} кг` : ''}<br>Активность: ${ACT.find(a => a[0] === p.activity)[1]}</div>
+  <div class="card"><h3>Где хранятся данные</h3><div class="mut" style="line-height:1.6">Анкета и дневник сохраняются на этом устройстве в зашифрованном виде, повторно их вводить не нужно. Safari и значок на экране «Домой» хранят данные раздельно: пользуйтесь приложением с экрана «Домой» (Поделиться → «На экран „Домой“»). Чтобы данные не потерялись при смене телефона или очистке браузера, включите резервную копию ниже.</div></div>
+  <div class="card"><h3>Параметры</h3><div class="mut" style="line-height:1.7">${p.sex === 'male' ? 'Мужчина' : 'Женщина'}, ${pAge(p)} ${plural(pAge(p), 'год', 'года', 'лет')}, ${p.height} см, ${r1(lastWeight())} кг<br>Цель: ${{loss: 'похудеть', maintain: 'поддерживать вес', gain: 'набрать'}[p.goal]}${p.targetWeight ? ` до ${p.targetWeight} кг` : ''}<br>Активность: ${ACT.find(a => a[0] === p.activity)[1]}</div>
   <button class="btn sec" style="margin-top:10px" data-act="editProfile">Изменить параметры и цель</button></div>
   <div class="card"><h3>Распределение по приёмам</h3><form id="shf"><div class="g3" style="grid-template-columns:repeat(4,1fr)">${MEALS.map(([m, t]) => `<label class="fld"><span>${t}, %</span><input name="${m}" inputmode="numeric" value="${r0((p.shares || C.MEAL_SHARES)[m] * 100)}"></label>`).join('')}</div>
   <label class="fld" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="wb" style="width:auto" ${p.workoutBonus ? 'checked' : ''}><span style="margin:0">Добавлять к норме 50% калорий тренировки</span></label><button class="btn sm">Сохранить</button></form></div>
