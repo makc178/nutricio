@@ -421,7 +421,7 @@ function addSheet(m) { CUR_MEAL = m; const rc = recent(); sheet(`<div class="hd"
   ${rc.length ? `<div class="card" style="margin-top:14px"><h3>Недавнее</h3>${rc.slice(0, 4).map((x, i) => `<div class="li" style="cursor:pointer" data-act="quickRecent" data-i="${i}"><div class="sp"><b style="font-size:14px">${esc(x.name)}</b><div class="mut">${x.g ? r0(x.g) + ' г · ' : ''}${r0(x.kcal)} ккал</div></div><span class="pill">+</span></div>`).join('')}</div>` : ''}`);
   document.querySelectorAll('#mealSeg button').forEach(b => b.onclick = () => { document.querySelectorAll('#mealSeg button').forEach(x => x.classList.remove('on')); b.classList.add('on'); CUR_MEAL = b.dataset.v; }); }
 function recent() { const seen = new Set(), out = []; for (const k of Object.keys(S.meals).sort().reverse()) for (const x of [...S.meals[k]].reverse()) { const id = x.name + '|' + r0(x.g); if (!seen.has(id)) { seen.add(id); out.push(x); } if (out.length >= 6) return out; } return out; }
-async function addItem(it) { (S.meals[DAY] = S.meals[DAY] || []).push({id: uid(), meal: CUR_MEAL, t: Date.now(), ...it}); await save(); closeSheet(); render(); balEv('meal_added'); render(); toast(`Добавлено: ${it.name}`); await checkBadges(); }
+async function addItem(it) { (S.meals[DAY] = S.meals[DAY] || []).push({id: uid(), meal: CUR_MEAL, t: Date.now(), ...it}); await save(); txKick(); closeSheet(); render(); balEv('meal_added'); render(); toast(`Добавлено: ${it.name}`); await checkBadges(); }
 function portionForm(food, src) { const per100 = food.per !== 'portion';
   const pc = per100 ? pieceOf(food) : null;
   sheet(`<div class="hd"><div><div class="mut">${MNAME[CUR_MEAL]}</div><div class="h1" style="font-size:20px">${esc(food.name)}</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
@@ -461,7 +461,7 @@ function manualSheet(photoId) { const OPT = photoId ? ' <i class="opt">необ�
       (S.meals[DAY] = S.meals[DAY] || []).push({id: uid(), meal: CUR_MEAL, t: Date.now(), name, g: gg, kcal: g('kcal'), p: g('p'), f: g('f'), c: g('c'), src: 'photo', photo: photoId, est: 1, rq, pend: 1});
       if (f.get('keep') && nm && g('kcal') && !S.customFoods.some(x => x.name === nm)) S.customFoods.push({id: uid(), name: nm, per: 'portion', g: gg, kcal: g('kcal'), p: g('p'), f: g('f'), c: g('c')});
       (S.txReq = S.txReq || []).push({id: rq, kind: 'photo', photo: photoId, date: DAY, meal: CUR_MEAL, name: nm || undefined, grams: gg || undefined, sent: 0});
-      (async () => { await save(); if (bot) txPoll(); closeSheet(); balEv('meal_added'); render(); txToast(bot); await checkBadges(); })(); return; }
+      (async () => { await save(); if (bot) txKick(); closeSheet(); balEv('meal_added'); render(); txToast(bot); await checkBadges(); })(); return; }
     const it = {name, g: g('g') || null, kcal: g('kcal'), p: g('p'), f: g('f'), c: g('c'), src: photoId ? 'photo' : 'manual'}; if (photoId) it.photo = photoId;
     if (f.get('keep') && !S.customFoods.some(x => x.name === name)) S.customFoods.push({id: uid(), name, per: 'portion', g: it.g, kcal: it.kcal, p: it.p, f: it.f, c: it.c});
     addItem(it); }; }
@@ -543,7 +543,7 @@ function txList(items) { const box = $('#txr'); if (!box) return;
       const rq = 't' + Date.now().toString(36) + uid().slice(0, 6), bot = !!S.sync?.token, rows = items.length ? items : [{name: TX_LAST.slice(0, 80) || 'Запись текстом', grams: null, kcal: 0, p: 0, f: 0, c: 0, confidence: 0}];
       for (const x of rows) day.push({id: uid(), meal: CUR_MEAL, t: Date.now(), name: x.name, g: x.grams || null, kcal: x.kcal || 0, p: x.p || 0, f: x.f || 0, c: x.c || 0, src: 'text', est: !(x.confidence >= .7), rq, pend: 1});
       (S.txReq = S.txReq || []).push({id: rq, date: DAY, meal: CUR_MEAL, text: TX_LAST, sent: 0});
-      TX_LAST = ''; await save(); if (bot) txPoll(); closeSheet(); render(); txToast(bot); await checkBadges(); }; };
+      TX_LAST = ''; await save(); if (bot) txKick(); closeSheet(); render(); txToast(bot); await checkBadges(); }; };
   draw(); }
 
 function txToast(bot) { if (bot) toast('Данные приняты, Нутрициолог считает КБЖУ', 2500); else { toast('Сохранено в очереди. ', 2500); const e = [...document.querySelectorAll('.toast')].pop(); if (e) { const l = document.createElement('a'); l.textContent = 'Включите резервную копию'; l.className = 'tlnk'; l.onclick = () => { e.remove(); TAB = 'profile'; render(); setTimeout(() => { const h = [...document.querySelectorAll('h3')].find(x => x.textContent === 'Резервная копия'); if (h) h.scrollIntoView({behavior: 'smooth', block: 'center'}); }, 80); }; e.appendChild(l); } }; }
@@ -568,9 +568,13 @@ async function txPoll() { warnApply();  const tok = S?.sync?.token; if (!tok || 
     const pd = await ghGetJson(tok, 'personal_db.json'); if (pd && Array.isArray(pd.json)) { const v = pd.json.filter(x => x && x.name && num(x.kcal) != null).map(x => ({id: x.id || 'pdb:' + x.name, name: String(x.name), per: x.per === 'portion' ? 'portion' : '100g', g: num(x.g) || null, kcal: num(x.kcal), p: num(x.p) || 0, f: num(x.f) || 0, c: num(x.c) || 0, bot: 1}));
       if (JSON.stringify(v) !== JSON.stringify(S.personalDb || [])) { S.personalDb = v; ch = true; } }
   TX_ERR = ''; } catch (e) { console.warn('txPoll', e); TX_ERR = (e && e.message) || 'ошибка сети'; ch = true; }
-  TX_BUSY = false; if (ch) { await save(); if (!$('#ov') || TX_FLASH.size) { const m = $('#ov') && document.querySelector('#ov .sheet[data-mealsheet]'); if (m) { render(); mealSheet(m.dataset.mealsheet); } else if (!$('#ov')) render(); } setTimeout(() => TX_FLASH.clear(), 2500); } }
-function txLoop() { clearInterval(TX_T); txPoll(); TX_T = setInterval(() => { if (document.visibilityState === 'visible') txPoll(); }, 60000); }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') txPoll(); });
+  TX_BUSY = false; txArm(); if (ch) { await save(); if (!$('#ov') || TX_FLASH.size) { const m = $('#ov') && document.querySelector('#ov .sheet[data-mealsheet]'); if (m) { render(); mealSheet(m.dataset.mealsheet); } else if (!$('#ov')) render(); } setTimeout(() => TX_FLASH.clear(), 2500); } }
+// автосинхронизация: опрос раз в минуту только пока есть блюда «В очереди»/«Отправлено Нутрициологу»
+const txPending = () => !!(S?.txReq && S.txReq.length);
+function txArm() { if (txPending() && S?.sync?.token) { if (!TX_T) TX_T = setInterval(() => { if (document.visibilityState === 'visible') txPoll(); }, 60000); } else if (TX_T) { clearInterval(TX_T); TX_T = null; } }
+function txLoop() { txPoll(); }
+function txKick() { if (!S?.sync?.token) return; clearTimeout(syncT); syncNow(); txPoll(); }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && KEY) { txPoll(); if (S?.sync?.token) schedSync(); } });
 
 
 /* ---------- Балагур: строка под итогом дня, «Факт дня», «Анекдот дня» (тексты общие, без личных данных) ---------- */
