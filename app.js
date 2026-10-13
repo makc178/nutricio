@@ -411,7 +411,7 @@ function scrFood() { const k = DAY, {lim, eaten, norm} = mealLimitsFor(k), t = s
 function mealSheet(m) { setTimeout(() => { const h = document.querySelector('#ov .sheet'); if (h) h.dataset.mealsheet = m; });  const items = dayItems(DAY).filter(x => x.meal === m), {lim} = mealLimitsFor(DAY), t = sumItems(items);
   sheet(`<div class="hd"><div><div class="mut">${fmtD(parseD(DAY))}</div><div class="h1" style="font-size:21px">${MNAME[m]}</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
   <div class="card"><div class="mut" style="margin-bottom:6px">${r0(t.kcal)} из ${r0(lim[m].kcal)} ккал · Б ${r0(t.p)} · Ж ${r0(t.f)} · У ${r0(t.c)}</div>
-  ${items.length ? items.map(x => `<div class="li${TX_FLASH.has(x.id) ? ' txflash' : ''}">${x.photo ? `<img data-ph="${x.photo}" alt="" style="width:40px;height:40px;border-radius:10px;object-fit:cover;margin-right:10px;flex:none">` : ''}<div class="sp"><b style="font-size:14px">${esc(x.name)}</b>${x.pend ? ` <span class="txpend"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>уточняется</span>` : x.refined ? ' <span class="txok">уточнено</span>' : ''}<div class="mut">${x.g ? r0(x.g) + ' г · ' : ''}Б ${r1(x.p)} · Ж ${r1(x.f)} · У ${r1(x.c)}${x.est ? ' · ≈ оценка' : ''}${x.photo ? ' · есть фото' : ''}</div></div><b>${r0(x.kcal)}</b><button class="x" style="font-size:20px" data-act="delItem" data-id="${x.id}" data-m="${m}" aria-label="Удалить">×</button></div>`).join('') : '<div class="empty">В этом приёме пока ничего нет</div>'}</div>
+  ${items.length ? items.map(x => `<div class="li${TX_FLASH.has(x.id) ? ' txflash' : ''}">${x.photo ? `<img data-ph="${x.photo}" alt="" style="width:40px;height:40px;border-radius:10px;object-fit:cover;margin-right:10px;flex:none">` : ''}<div class="sp"><b style="font-size:14px">${esc(x.name)}</b>${x.pend ? txCap(x) : ''}<div class="mut">${x.g ? r0(x.g) + ' г · ' : ''}Б ${r1(x.p)} · Ж ${r1(x.f)} · У ${r1(x.c)}${x.est ? ' · ≈ оценка' : ''}${x.photo ? ' · есть фото' : ''}</div>${x.pend ? txNote(x) : ''}</div><b>${x.pend && !x.kcal ? '' : r0(x.kcal)}</b><button class="x" style="font-size:20px" data-act="delItem" data-id="${x.id}" data-m="${m}" aria-label="Удалить">×</button></div>`).join('') : '<div class="empty">В этом приёме пока ничего нет</div>'}</div>
   <div style="padding:0 16px"><button class="btn" data-act="addTo" data-m="${m}">Добавить в «${MNAME[m]}»</button></div>`); }
 let CUR_MEAL = 'breakfast';
 function addSheet(m) { CUR_MEAL = m; const rc = recent(); sheet(`<div class="hd"><div><div class="mut">${fmtD(parseD(DAY))}</div><div class="h1" style="font-size:21px">Добавить</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
@@ -551,6 +551,11 @@ function txToast(bot) { if (bot) toast('Данные приняты, Нутри�
 new MutationObserver(() => document.querySelectorAll('img[data-ph]:not([data-ok])').forEach(async im => { im.dataset.ok = 1; try { const bx = await idb.get('dish:' + im.dataset.ph); if (bx && KEY) im.src = URL.createObjectURL(new Blob([await open_(KEY, bx)], {type: 'image/jpeg'})); else im.remove(); } catch (e) { im.remove(); } })).observe(document.documentElement, {childList: true, subtree: true});
 /* ---------- обмен с ботом-нутрициологом через закрытый репозиторий: text_inbox/<id>.json → text_outbox/<id>.json ---------- */
 let TX_FLASH = new Set(), TX_BUSY = false, TX_T = null;
+let TX_ERR = '';
+function txQ(x) { return (S.txReq || []).find(q => q.id === x.rq); }
+function txCap(x) { const q = txQ(x); return q && q.sent ? ' <span class="txcap txsent">Отправлено Нутрициологу</span>' : ' <span class="txcap txq">В очереди</span>'; }
+function txNote(x) { const q = txQ(x); if (q && q.sent) return ''; if (!S.sync?.token) return '<div class="txnote">Включите резервную копию <button class="btn sm" data-act="goBackup">Включить</button></div>'; return TX_ERR ? `<div class="txnote">Не отправлено: ${esc(TX_ERR)}</div>` : ''; }
+function goBackup() { closeSheet(); TAB = 'profile'; render(); setTimeout(() => { const h = [...document.querySelectorAll('h3')].find(x => x.textContent === 'Резервная копия'); if (h) h.scrollIntoView({behavior: 'smooth', block: 'center'}); }, 80); }
 async function txPoll() { warnApply();  const tok = S?.sync?.token; if (!tok || TX_BUSY || !KEY) return; TX_BUSY = true; let ch = false;
   try {
     for (const q of S.txReq || []) { if (q.sent) continue; if (q.kind === 'photo') { const bx = await idb.get('dish:' + q.photo); if (bx) await ghPutRaw(tok, `photo_inbox/${q.id}.jpg`, await open_(KEY, bx), 'photo ' + q.id); const o = {id: q.id, date: q.date, meal: q.meal}; if (q.name) o.name = q.name; if (q.grams) o.grams = q.grams; await ghPut(tok, `photo_inbox/${q.id}.json`, o, 'photo ' + q.id); q.sent = 1; ch = true; continue; } await ghPut(tok, `text_inbox/${q.id}.json`, {id: q.id, date: q.date, meal: q.meal, text: q.text}, 'text ' + q.id); q.sent = 1; ch = true; }
@@ -562,7 +567,7 @@ async function txPoll() { warnApply();  const tok = S?.sync?.token; if (!tok || 
       S.txReq = S.txReq.filter(x => x.id !== q.id); await ghDel(tok, r.path || `text_outbox/${q.id}.json`, r.sha); ch = true; }
     const pd = await ghGetJson(tok, 'personal_db.json'); if (pd && Array.isArray(pd.json)) { const v = pd.json.filter(x => x && x.name && num(x.kcal) != null).map(x => ({id: x.id || 'pdb:' + x.name, name: String(x.name), per: x.per === 'portion' ? 'portion' : '100g', g: num(x.g) || null, kcal: num(x.kcal), p: num(x.p) || 0, f: num(x.f) || 0, c: num(x.c) || 0, bot: 1}));
       if (JSON.stringify(v) !== JSON.stringify(S.personalDb || [])) { S.personalDb = v; ch = true; } }
-  } catch (e) { console.warn('txPoll', e); }
+  TX_ERR = ''; } catch (e) { console.warn('txPoll', e); TX_ERR = (e && e.message) || 'ошибка сети'; ch = true; }
   TX_BUSY = false; if (ch) { await save(); if (!$('#ov') || TX_FLASH.size) { const m = $('#ov') && document.querySelector('#ov .sheet[data-mealsheet]'); if (m) { render(); mealSheet(m.dataset.mealsheet); } else if (!$('#ov')) render(); } setTimeout(() => TX_FLASH.clear(), 2500); } }
 function txLoop() { clearInterval(TX_T); txPoll(); TX_T = setInterval(() => { if (document.visibilityState === 'visible') txPoll(); }, 60000); }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') txPoll(); });
@@ -856,7 +861,7 @@ const ACTIONS = {
   day: d => { const x = addD(parseD(DAY), +d.n); if (dkey(x) > dkey()) return; DAY = dkey(x); render(); },
   meal: d => mealSheet(d.m), addTo: d => addSheet(d.m),
   delItem: async d => { S.meals[DAY] = dayItems(DAY).filter(x => x.id !== d.id); await save(); render(); mealSheet(d.m); },
-  addPhoto: () => photoAdd(), addSearch: () => searchSheet(), addRest: () => restSheet(), addManual: () => manualSheet(),
+  goBackup: () => goBackup(), addPhoto: () => photoAdd(), addSearch: () => searchSheet(), addRest: () => restSheet(), addManual: () => manualSheet(),
   quickRecent: d => { const {id, meal, t, ...rest} = recent()[+d.i]; addItem(rest); },
   activity: d => activitySheet(d.d), measure: () => measureSheet(),
   period: d => { PERIOD = d.v; render(); }, openDay: d => { DAY = d.d; TAB = 'food'; window.scrollTo(0, 0); render(); }, awGallery: () => awardGallery(), pdf: () => pdfSheet(),
@@ -869,7 +874,7 @@ const ACTIONS = {
   myNorm: () => myNormSheet(),
   applySug: async () => { const pl = S.plan; if (!pl.manual || !pl.suggest) return; pl.manual = MN.applySuggestion(pl.manual, pl.suggest); pl.manual.mode = pl.manual.mode || 'pct'; pl.suggest = null; await save(); render(); toast('Норма обновлена'); },
   lock: () => lock(), plan: () => planSheet(), editProfile: () => onboarding(true),
-  syncOn: async () => { const t = $('#tok').value.trim(); if (!t) return; try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}`, {headers: ghH(t)}); if (!r.ok) throw new Error(r.status === 404 ? 'нет доступа к репозиторию' : 'GitHub ' + r.status); S.sync = {token: t, last: 0}; await save(true); render(); syncNow(true); } catch (e) { toast('Не удалось: ' + e.message); } },
+  syncOn: async () => { const t = $('#tok').value.trim(); if (!t) return; try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}`, {headers: ghH(t)}); if (!r.ok) throw new Error(r.status === 404 ? 'нет доступа к репозиторию' : 'GitHub ' + r.status); S.sync = {token: t, last: 0}; await save(true); render(); syncNow(true); txPoll(); } catch (e) { toast('Не удалось: ' + e.message); } },
   syncOff: async () => { if (!confirm('Отключить резервное копирование на этом устройстве?')) return; S.sync = {token: '', last: 0}; SYNC_ST = ''; await save(true); render(); },
   syncNow: () => syncNow(true),
   importFile: () => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.json,application/json'; i.onchange = async () => { try { const n = importHealth(JSON.parse(await i.files[0].text())); await save(); render(); toast(`Импортировано: ${n} ${plural(n, 'день', 'дня', 'дней')}`); await checkBadges(); } catch (e) { toast('Файл не похож на данные активности'); } }; i.click(); },
