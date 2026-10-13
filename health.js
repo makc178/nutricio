@@ -15,6 +15,7 @@
   function normDay(d) { if (!d || typeof d !== 'object') return null; const k = date(d.date); if (!k) return null;
     let ws = d.workouts; if (typeof ws === 'string') { try { ws = JSON.parse(ws); } catch (e) { ws = null; } } if (ws && !Array.isArray(ws)) ws = typeof ws === 'object' ? [ws] : null;
     const sv = String(d.steps ?? '').trim(), steps = /^\d{1,3}([,.\s\u00a0\u202f]\d{3})+$/.test(sv) ? +sv.replace(/\D/g, '') : num(d.steps), ak = num(d.activeKcal ?? d.active_kcal ?? d.activeEnergy), out = {date: k};
+    const wt = num(d.weight ?? d.weight_kg ?? d.weightKg ?? d.bodyMass); if (wt != null && wt >= 30 && wt <= 300) out.weight = r1(wt);
     if (steps != null && steps >= 0) out.steps = r0(steps); if (ak != null && ak >= 0) out.activeKcal = r0(ak);
     if (ws) { const seen = new Set(); out.workouts = [];
       for (const w of ws) { if (!w || typeof w !== 'object') continue; const type = String(w.type ?? w.name ?? '').trim().slice(0, 60), mn = minutes(w), kc = num(w.kcal ?? w.energy ?? w.calories), dist = num(w.distance);
@@ -26,7 +27,7 @@
     const days = Array.isArray(j) ? j : j && Array.isArray(j.days) ? j.days : [j]; return days.map(normDay).filter(Boolean); }
   // несколько файлов: сортировка по имени (yyyy-MM-dd-HHmm), более поздний заменяет данные «Здоровья» за день; пустые поля не затирают
   function mergeFiles(files) { const by = {}; for (const f of [...files].sort((a, b) => a.name < b.name ? -1 : 1)) for (const d of normalize(f.json)) { const p = by[d.date] || {date: d.date};
-      if (d.steps != null) p.steps = d.steps; if (d.activeKcal != null) p.activeKcal = d.activeKcal; if (d.workouts) p.workouts = d.workouts; by[d.date] = p; }
+      if (d.steps != null) p.steps = d.steps; if (d.activeKcal != null) p.activeKcal = d.activeKcal; if (d.workouts) p.workouts = d.workouts; if (d.weight != null) p.weight = d.weight; by[d.date] = p; }
     return Object.values(by).sort((a, b) => a.date < b.date ? -1 : 1); }
   return {num, minutes, date, normalize, mergeFiles};
 });

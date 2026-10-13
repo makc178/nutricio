@@ -155,6 +155,7 @@ function importHealth(j) { const days = HL.normalize(j); let n = 0;
   for (const d of days) { if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d.date || '')) continue; const a = S.activity[d.date] = S.activity[d.date] || {steps: 0, workouts: []};
     if (num(d.steps) != null) { a.steps = r0(num(d.steps)); a.src = 'health'; }
     if (num(d.activeKcal) != null) a.activeKcal = r0(num(d.activeKcal));
+    if (num(d.weight) >= 30 && num(d.weight) <= 300) { upsertMeasure({weight: num(d.weight)}, d.date); S.measures.sort((x, y) => x.d < y.d ? -1 : 1); }
     if (d.workouts) a.workouts = (a.workouts || []).filter(w => w.src !== 'health').concat(d.workouts.map(w => ({id: uid(), type: wType(w.type)[1], hk: String(w.type || '').slice(0, 60), start: /^\d{4}-\d{2}-\d{2}/.test(w.start || '') ? String(w.start).slice(0, 25) : undefined, min: r0(num(w.minutes) || 0), kcal: r0(num(w.kcal) || 0), dist: num(w.distance) != null ? r1(num(w.distance)) : undefined, src: 'health'})));
     n++; }
   return n; }
