@@ -24,7 +24,9 @@ const SHORTCUT_RU = "Основной путь: команда каждый ве
 const XSVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const ic = (n, cls='') => `<span class="ic ${cls}">${ICONS[n] ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${ICONS[n]}</svg>` : ''}</span>`;
 const pad = n => String(n).padStart(2, '0');
-const dkey = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const mskKey = () => { const d = new Date(Date.now() + 3 * 3600e3); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`; };
+const mskD = () => { const [y, m, d] = mskKey().split('-').map(Number); return new Date(y, m - 1, d, 12); };  // «сегодня» по Москве как локальная дата
+const dkey = d => d ? `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` : mskKey();
 const parseD = k => { const [y,m,d] = k.split('-').map(Number); return new Date(y, m-1, d); };
 const addD = (d, n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
 const fmtD = d => d.toLocaleDateString('ru-RU', {day:'numeric', month:'long'});
@@ -194,15 +196,15 @@ function mealLimitsFor(k) { const n = dayNorm(k); const shares = S.profile?.shar
   const order = ['breakfast', 'lunch', 'dinner']; let lastIdx = -1; order.forEach((m, i) => { if (eaten[m].kcal > 0) lastIdx = i; });
   return {lim: C.redistribute(n, eaten, order.filter((m, i) => i < lastIdx), shares), eaten, norm: n}; }
 function dayColor(k) { const n = dayNorm(k); if (!n || !dayItems(k).length) return null; return C.color(sumItems(dayItems(k)).kcal, n.kcal, 'kcal'); }
-function streak() { let n = 0, d = new Date(); if (!dayItems(dkey(d)).length) d = addD(d, -1); for (;;) { const c = dayColor(dkey(d)); if (!c || c === 'red') break; n++; d = addD(d, -1); } return n; }
+function streak() { let n = 0, d = mskD(); if (!dayItems(dkey(d)).length) d = addD(d, -1); for (;;) { const c = dayColor(dkey(d)); if (!c || c === 'red') break; n++; d = addD(d, -1); } return n; }
 function trendSeries() { const m = series().filter(x => x.weight); if (!m.length) return []; const byD = Object.fromEntries(m.map(x => [x.d, x.weight])); const days = [];
   for (let d = parseD(m[0].d), end = parseD(dkey()); d <= end; d = addD(d, 1)) days.push(dkey(d)); const tr = C.weightTrend(days.map(k => byD[k] ?? null)); return days.map((k, i) => ({d: k, w: byD[k] ?? null, t: tr[i]})); }
 function plannedKgWeek() { const p = S.profile; if (!p || p.goal === 'maintain') return 0; const w = S.plan?.weightAt || p.weight; return p.goal === 'loss' ? w * 0.0075 : w * 0.00375; }
-function adherence(days) { let ok = 0; for (let i = 1; i <= days; i++) { const c = dayColor(dkey(addD(new Date(), -i))); if (c && c !== 'red') ok++; } return ok / days; }
+function adherence(days) { let ok = 0; for (let i = 1; i <= days; i++) { const c = dayColor(dkey(addD(mskD(), -i))); if (c && c !== 'red') ok++; } return ok / days; }
 async function maintenance() { if (!S.plan) return; let ch = false;
   const lw = lastWeight(); if (lw && C.needsRecalc(S.plan.weightAt, lw)) { recalcPlan(lw); S.log.push({d: dkey(), t: `Норма пересчитана: вес изменился до ${lw} кг`}); ch = true; }
   const last = parseD(S.plan.lastAuto || S.plan.at);
-  if (C.isAutocorrectDue(last, new Date())) { const tr = trendSeries(); const a = tr.find(x => x.d === dkey(addD(new Date(), -14))), b = tr[tr.length - 1];
+  if (C.isAutocorrectDue(last, new Date())) { const tr = trendSeries(); const a = tr.find(x => x.d === dkey(addD(mskD(), -14))), b = tr[tr.length - 1];
     if (a && b && a.t && b.t) { const res = C.autocorrect({goal: S.profile.goal, plannedKgWeek: plannedKgWeek(), trendStart: a.t, trendEnd: b.t, adherence: adherence(14), kcal: normBase().kcal, minKcal: S.plan.minKcal});
       if (S.plan.manual) { const sg = MN.suggestion(res, dkey(), null); if (sg) S.plan.suggest = sg; }
       else if (res.action === 'adjust') { S.plan.adj = (S.plan.adj || 0) + res.change; S.log.push({d: dkey(), t: `Автокоррекция: ${res.change > 0 ? '+' : ''}${res.change} ккал, норма ${r0(res.kcal)} ккал`}); toast(`Норма скорректирована на ${res.change > 0 ? '+' : ''}${res.change} ккал`, 4000); }
@@ -250,7 +252,7 @@ function awardGallery() { const h = S.awards || {}, ids = AW.LIST.map(a => a.id)
   <div class="card awgal">${ids.map(id => { const i = awInfo(id); return `<div class="badge ${h[id] ? 'on' : ''}" data-award="${id}"><span class="awm">${medal(id, !h[id])}</span><b>${esc(i.title)}</b><span class="mut">${h[id] ? fmtD(parseD(h[id])) : esc(i.cond || '')}</span></div>`; }).join('')}</div>
   <div class="mut" style="text-align:center;padding:4px 24px 8px">❄ Один пропуск в 7 дней прощается — серия сохранится</div>`); }
 function weeklyReport() { let days = 0, green = 0, kc = 0, prot = 0, steps = 0, sd = 0;
-  for (let i = 1; i <= 7; i++) { const k = dkey(addD(new Date(), -i)); const c = dayColor(k); if (c) { days++; if (c !== 'red') green++; const t = sumItems(dayItems(k)); kc += t.kcal; if (t.p >= dayNorm(k).p * 0.8) prot++; } const a = S.activity[k]; if (a?.steps) { steps += a.steps; sd++; } }
+  for (let i = 1; i <= 7; i++) { const k = dkey(addD(mskD(), -i)); const c = dayColor(k); if (c) { days++; if (c !== 'red') green++; const t = sumItems(dayItems(k)); kc += t.kcal; if (t.p >= dayNorm(k).p * 0.8) prot++; } const a = S.activity[k]; if (a?.steps) { steps += a.steps; sd++; } }
   if (!days) return null;
   const praise = green >= 5 ? 'Отличная неделя: вы держались нормы почти каждый день.' : green >= 3 ? 'Хорошая работа: больше половины дней в плане.' : 'Вы продолжаете записывать питание — это уже главный шаг.';
   const fact = `В норме ${green} из ${days} ${plural(days, 'дня', 'дней', 'дней')} с записями, в среднем ${r0(kc / days)} ккал в день.`;
@@ -353,7 +355,7 @@ function normaScreen(edit) { const pl = S.plan, kcal = r0(pl.kcal + (pl.adj || 0
   app().innerHTML = `<div class="onb norma" style="min-height:100vh;min-height:100dvh;display:flex;flex-direction:column"><div style="text-align:center;padding:calc(env(safe-area-inset-top) + 24px) 20px 6px"><div class="oh1" style="font-size:30px">Ваша норма</div><div class="mut" style="font-size:14px;margin-top:4px">на каждый день</div></div>
   <div style="position:relative;width:200px;height:200px;margin:10px auto 14px"><svg viewBox="0 0 200 200" width="200" height="200">${ring}</svg><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-weight:800;font-size:40px;letter-spacing:-1px">${kcal.toLocaleString('ru-RU')}</div><div class="mut" style="font-size:13px">ккал в день</div></div></div>
   <div class="orow" style="padding:0 16px;margin-bottom:10px">${[['Белки', pl.p, '#7A9A6E'], ['Жиры', pl.f, '#C9A45C'], ['Углеводы', pl.c, '#A9C29C']].map(([t, v, c]) => `<div class="card nmac"><i style="background:${c}"></i><div><b>${r0(v)}</b> <small>г</small></div><div class="mut">${t}</div></div>`).join('')}</div>
-  <div class="card" style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-radius:22px">${oi('drop', 20, '#5B8DB8')}<b style="flex:1;font-size:16px">Вода</b><b style="font-size:16px">${String((pl.waterMl / 1000).toFixed(1)).replace('.', ',')} л</b></div>
+  <div class="card" style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-radius:22px">${oi('drop', 20, '#5B8DB8')}<b style="flex:1;font-size:16px">Вода</b><b style="font-size:16px">${String((waterNorm() / 1000).toFixed(1)).replace('.', ',')} л</b></div>
   <div class="card" style="padding:16px 18px"><b style="font-size:15px">Распределение по приёмам</b><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px;text-align:center">${mk.map((x, i) => `<div><div style="height:9px;border-radius:5px;background:${mcol[i]};margin-bottom:6px"></div><b style="font-size:12.5px">${x.t}</b><div class="mut" style="font-size:11.5px">${r0(100 * x.k / mt)}% · ${x.k}</div></div>`).join('')}</div></div>
   <p style="text-align:center;padding:4px 28px;line-height:1.45;font-size:14.5px">🌿 <b>${edit ? 'Норма пересчитана.' : 'Отличный старт!'}</b> Маленькие шаги каждый день — и цель придёт сама.</p>
   <div style="padding:10px 16px 6px;text-align:center"><button type="button" class="lnk" id="normaMore">Подробнее о расчёте</button></div>
@@ -366,7 +368,7 @@ function planSheet(first) { const p = S.profile, pl = S.plan; const pc = C.paceC
   sheet(`<div class="hd"><div class="h1" style="font-size:21px">${first ? 'Ваша норма готова' : 'Расчёт нормы'}</div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
   <div class="card" style="text-align:center"><div style="font-weight:800;font-size:38px">${r0(pl.kcal + (pl.adj || 0))}</div><div class="mut">ккал в день</div>
   <div class="g3" style="margin-top:12px">${[['Белки', pl.p], ['Жиры', pl.f], ['Углеводы', pl.c]].map(([t, v]) => `<div><b style="font-size:18px">${r0(v)} г</b><div class="mut">${t}</div></div>`).join('')}</div></div>
-  <div class="card" style="font-size:13.5px;line-height:1.6">Базовый обмен: <b>${pl.bmr}</b> ккал · расход с активностью: <b>${pl.tdee}</b> ккал<br>ИМТ: <b>${pl.bmi}</b> · клетчатка: <b>${pl.fiber} г</b> · вода: <b>${(pl.waterMl / 1000).toFixed(1)} л</b><br>
+  <div class="card" style="font-size:13.5px;line-height:1.6">Базовый обмен: <b>${pl.bmr}</b> ккал · расход с активностью: <b>${pl.tdee}</b> ккал<br>ИМТ: <b>${pl.bmi}</b> · клетчатка: <b>${pl.fiber} г</b> · вода: <b>${(waterNorm() / 1000).toFixed(1).replace('.', ',')} л</b><br>
   По приёмам: ${MEALS.map(([m, t]) => `${t.toLowerCase()} ${r0(pl.meals[m].kcal)}`).join(', ')} ккал
   ${p.goal !== 'maintain' ? `<br>Безопасный темп: ${pc.safeRangeKgWeek[0]}–${pc.safeRangeKgWeek[1]} кг в неделю. Реалистичная дата цели: <b>${yr(pc.realisticDate)}</b>` : ''}
   ${pc.ok === false ? `<div class="tip" style="margin:10px 0 0;background:#D9A93A22">Выбранный срок требует слишком быстрого темпа. Безопаснее ориентироваться на ${yr(pc.realisticDate)}.</div>` : ''}</div>
@@ -482,28 +484,29 @@ function photoAdd() { sheet(`<div class="hd"><div><div class="mut">${MNAME[CUR_M
 const TX_NUM = {'один': 1, 'одна': 1, 'одно': 1, 'два': 2, 'две': 2, 'три': 3, 'четыре': 4, 'пять': 5, 'пол': .5, 'половина': .5, 'полтора': 1.5, 'пара': 2};
 const TX_DEF = [[/яйц|яичн/, 55, 'яйцо куриное'], [/тост/, 30, 'хлеб тостовый'], [/масл/, 5, 'масло сливочное'], [/хлеб|батон/, 30, 'хлеб'], [/капучин|латте|флэт|раф/, 250, null], [/кофе|американо|эспрессо/, 200, null], [/чай/, 250, null], [/банан/, 120, null], [/яблок/, 180, null], [/сыр/, 20, null], [/творог/, 150, null], [/йогурт/, 125, null], [/каш|овсян/, 200, null], [/суп|борщ/, 300, null], [/салат/, 150, null], [/молок/, 200, null], [/сок/, 200, null], [/круассан/, 60, null], [/тартин/, 50, null]];
 const txN = s => s.toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9% ]/g, ' ').replace(/\s+/g, ' ').trim();
-const txStem = w => w.length <= 4 ? w : w.slice(0, Math.max(4, w.length - 2));
+const txStem = w => w.length <= 3 ? w : w.slice(0, Math.max(3, w.length - 2));
 function txSplit(t) { const out = [];
-  for (let part of t.split(/[,;\n+]|\sи\s/i)) { part = part.trim(); if (!part) continue;
+  for (let part of t.split(/,(?!\d)|[;\n+]|\sи\s/i)) { part = part.trim(); if (!part) continue;
     const sub = part.split(/\s(?:с|со)\s/i); const head = sub[0]; out.push(head); for (const x of sub.slice(1)) out.push('~' + x); }
   return out; }
-function txQty(raw) { let s = raw.replace(/^~/, '').toLowerCase().replace(',', '.'), q = null, unit = null;
-  const m = s.match(/(\d+(?:\.\d+)?)\s*(кг|г|гр|грамм\S*|мл|л|шт\S*|ломт\S*|кусо?к\S*|порц\S*|стак\S*|ложк\S*)?/);
+function txQty(raw) { let s = raw.replace(/^~/, '').toLowerCase().replace(/(\d),(\d)/g, '$1.$2'), q = null, unit = null; const pct = []; s = s.replace(/(\d+(?:\.\d+)?)\s*%/g, (_, n) => { pct.push(n + '%'); return ' '; });
+  const m = s.match(/(\d+(?:\.\d+)?)\s*(кг|гр|грамм\S*|г|мл|л|шт\S*|ломт\S*|кусо?к\S*|порц\S*|стак\S*|ложк\S*)?(?![а-я])/);
   if (m) { q = +m[1]; unit = (m[2] || '').replace(/^(грамм|гр).*/, 'г').replace(/^шт.*|^ломт.*|^кус.*/, 'шт').replace(/^порц.*/, 'порц').replace(/^стак.*/, 'стак').replace(/^ложк.*/, 'ложк'); s = s.replace(m[0], ' '); }
   else { const w = s.split(/\s+/).find(x => TX_NUM[x] != null); if (w) { q = TX_NUM[w]; unit = 'шт'; s = s.replace(new RegExp('(^|\\s)' + w + '(\\s|$)'), ' '); } }
-  return {name: txN(s), q, unit, side: raw.startsWith('~')}; }
+  return {name: txN(s + (pct.length ? ' ' + pct.join(' ') : '')), q, unit, side: raw.startsWith('~')}; }
 function txFind(name, F, R, RS, noR) { const rest = RS.find(r => r.name && (' ' + name + ' ').includes(' ' + txN(r.name).split(' ')[0] + ' ')); if (rest) name = (' ' + name + ' ').replace(' ' + txN(rest.name).split(' ')[0] + ' ', ' ').trim();
   const words = name.split(' ').filter(w => w.length > 1).map(txStem); if (!words.length) return null;
   const score = n => { const t = ' ' + n; let hit = 0; for (const w of words) if (t.includes(' ' + w)) hit++; return hit / words.length - Math.min(n.length, 60) / 600 + (n === name ? .2 : n.startsWith(name) ? .1 : 0); };
-  const pools = [[S.customFoods.concat(S.personalDb || []).map(x => ({...x, src: 'my', n: txN(x.name)})), 'личная база', .55], [rest ? R.filter(x => x.rest === rest.name) : words.length >= 2 && !noR ? R : [], 'меню ресторана', .85], [F.map(x => ({...x, src: 'db', n: txN(x.name)})), 'база продуктов', .55]];
+  const pools = [[S.customFoods.concat(S.personalDb || []).map(x => ({...x, src: 'my', n: txN(x.name)})), 'личная база', .55], ...(rest ? [[R.filter(x => x.rest === rest.name), 'меню ресторана', .85]] : []), [F.map(x => ({...x, src: 'db', n: txN(x.name)})), 'база продуктов', .55], [rest || noR ? [] : R.filter(x => x.n === name), 'меню ресторана', .9]];
   for (const [pool, label, min] of pools) { let best = null, bs = 0; for (const x of pool) { const sc = score(x.n); if (sc > bs) { bs = sc; best = x; } }
     if (best && bs >= min) return {x: best, label: x => x, conf: bs >= .9 ? 1 : .6, lab: label + (best.rest ? ' · ' + best.rest : '')}; }
   return null; }
 async function txParse(text) { const F = await loadFoods(), RS = await loadRest();
   const R = RS.flatMap(r => (r.dishes || []).map(d => ({...d, name: d.name, rest: r.name, src: 'restaurant', n: txN(d.name), ...(d.pk != null ? {per: 'portion', kcal: d.pk, p: d.pp, f: d.pf, c: d.pc} : d.per === 'portion' ? {per: 'portion'} : {})})));
   const out = [];
-  for (const raw of txSplit(text)) { const {name, q, unit, side} = txQty(raw); if (!name) continue;
-    const def = TX_DEF.find(([re]) => re.test(name)); let hit = (def && def[2] && name.split(' ').length === 1 && txFind(def[2], F, R, RS, 1)) || txFind(name, F, R, RS);
+  for (const raw of txSplit(text)) { let {name, q, unit, side} = txQty(raw); if (!name) continue; const full = txN(raw.replace(/^~/, '')), exR = full !== name && R.find(x => x.n === full);
+    if (exR) { name = full; q = null; unit = null; }
+    const def = TX_DEF.find(([re]) => re.test(name)); let hit = (def && def[2] && name.split(' ').length === 1 && txFind(def[2], F, R, RS, 1)) || txFind(name, F, R, RS) || (/%/.test(name) ? txFind(name.replace(/\S*%/g, ' ').replace(/\s+/g, ' ').trim(), F, R, RS) : null);
     if (!hit) { out.push({name: raw.replace(/^~/, '').trim(), grams: q && unit === 'г' ? q : def ? def[1] : 100, kcal: null, p: null, f: null, c: null, source: '', confidence: 0}); continue; }
     const x = hit.x; let conf = hit.conf, g;
     if (unit === 'г' || unit === 'мл') g = q; else if (unit === 'кг' || unit === 'л') g = q * 1000;
@@ -602,7 +605,6 @@ function jokeCard() { const j = balJokes(); if (!j.length) return ''; if (JOKE_I
   return `<div class="card jokec"><div class="row" style="justify-content:space-between;align-items:center"><span class="mut" style="font-size:12px"><span class="balsp">✦</span> Анекдот дня от Балагура</span><button class="lnk" data-act="joke">Ещё анекдот</button></div><div class="balt" id="jokeT" style="font:italic 400 13px Manrope,system-ui,sans-serif;color:rgba(46,46,44,.7);margin-top:6px">${esc(j[JOKE_I % j.length].replace(/^Анекдот( дня)?:\s*/, ''))}</div></div>`; }
 
 /* ---------- режим «Перебор»: съедено сегодня > 105 % нормы (с бонусом активности, если включён); сутки по Москве ---------- */
-const mskKey = () => { const d = new Date(Date.now() + 3 * 3600e3); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`; };
 function warnOver() { if (!S?.profile || !S.plan) return 0; const k = mskKey(), n = dayNorm(k); if (!n || !n.kcal) return 0; const e = sumItems(dayItems(k)).kcal; return e > n.kcal * 1.05 ? r0(e - n.kcal) : 0; }
 function warnApply() { const over = warnOver(), b = document.body; b.classList.toggle('warn', !!over); const tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.content = over ? '#FBEDEA' : '#F6F1E7';
   document.querySelectorAll('.warnbar,.warntip').forEach(x => x.remove()); if (!over) return; const hd = app().querySelector('.hd'); if (!hd) return;
@@ -741,8 +743,8 @@ function goalMath() { const p = S.profile, tr = trendSeries(), cur = tr.length ?
   const withT = tr.filter(x => x.t != null); let rate = null; if (withT.length) { const last = withT[withT.length - 1], ref = withT.find(x => x.d >= dkey(addD(parseD(last.d), -14))) || withT[0];
     const days = (parseD(last.d) - parseD(ref.d)) / 864e5; if (days >= 7) rate = (last.t - ref.t) / days * 7; }
   const need = p.targetWeight - cur; let fcDate = null, fcText = 'появится, когда наберётся неделя записей веса';
-  if (rate != null) { if (rate && Math.sign(rate) === Math.sign(need)) { fcDate = addD(new Date(), Math.ceil(need / rate * 7)); fcText = `при текущем темпе — ${fmtD(fcDate)} ${fcDate.getFullYear()}`; } else fcText = 'вес пока не движется к цели'; }
-  const safe = cur * (p.goal === 'loss' ? 0.01 : 0.005), realWeeks = Math.ceil(left / safe), real = parseD(dkey(addD(new Date(), realWeeks * 7)));
+  if (rate != null) { if (rate && Math.sign(rate) === Math.sign(need)) { fcDate = addD(mskD(), Math.ceil(need / rate * 7)); fcText = `при текущем темпе — ${fmtD(fcDate)} ${fcDate.getFullYear()}`; } else fcText = 'вес пока не движется к цели'; }
+  const safe = cur * (p.goal === 'loss' ? 0.01 : 0.005), realWeeks = Math.ceil(left / safe), real = parseD(dkey(addD(mskD(), realWeeks * 7)));
   const dl = p.deadline ? parseD(p.deadline) : null, unreal = !!(dl && dl < real && left > 0.05), needWeek = dl ? left / Math.max(1 / 7, (dl - new Date()) / (7 * 864e5)) : null;
   return {p, tr: withT, cur, w0, total, done, frac, left, rate, fcDate, fcText, safe, real, dl, unreal, needWeek}; }
 function weightCard(pts, has) { if (!has) return `<div class="card"><div class="ttl2">Вес</div><div class="empty">Записей веса пока нет. Взвешивайтесь утром натощак и добавляйте вес кнопкой «Замеры».</div></div>`;
@@ -789,7 +791,7 @@ function volCard(pts) { const m = series(), last = {}; const items = VOL.map(([k
   return `<div class="card" id="volCard"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px"><div class="ttl2">Объёмы</div><span class="mut">от старта</span></div>
   <div style="padding:4px 0 12px">${bodyFig(last)}</div><div class="vgrid">${items}<button class="t vadd" data-act="measure">+ Замер</button></div>
   <div style="margin-top:12px"><div class="mut" style="margin-bottom:4px">${esc(nm)} за период</div>${hasVol ? (vals.length ? lineChart(pts, [{k: 'v', c: '#4F6B45', dots: 1}], null, {minSpan: 4, pad: 1}) : '<div class="empty">За этот период замеров нет</div>') : '<div class="empty">Замеров пока нет</div>'}</div></div>`; }
-function actProgressCard() { const n = PERIOD === 'week' ? 7 : PERIOD === 'month' ? 30 : PERIOD === 'm3' ? 91 : 182; const days = []; for (let i = n - 1; i >= 0; i--) { const k = dkey(addD(new Date(), -i)); days.push({k, s: S.activity[k]?.steps || 0}); }
+function actProgressCard() { const n = PERIOD === 'week' ? 7 : PERIOD === 'month' ? 30 : PERIOD === 'm3' ? 91 : 182; const days = []; for (let i = n - 1; i >= 0; i--) { const k = dkey(addD(mskD(), -i)); days.push({k, s: S.activity[k]?.steps || 0}); }
   const sd = days.filter(d => d.s), avg = sd.length ? r0(sd.reduce((a, d) => a + d.s, 0) / sd.length) : 0, kd = days.map(d => activeKcal(d.k)).filter(Boolean), kavg = kd.length ? r0(kd.reduce((a, b) => a + b, 0) / kd.length) : 0;
   const wo = days.flatMap(d => (S.activity[d.k]?.workouts || []).map(w => ({...w, d: d.k}))).reverse(), mx = Math.max(10000, ...days.map(d => d.s)), fromHealth = days.some(d => S.activity[d.k]?.src === 'health');
   const tile = (icn, t, v) => `<div class="t"><div class="l"><span class="tic3">${ic(icn)}</span>${t}</div><div class="v">${v}</div></div>`;
@@ -800,8 +802,8 @@ function actProgressCard() { const n = PERIOD === 'week' ? 7 : PERIOD === 'month
   ${list ? `<div style="margin-top:6px">${list}</div>` : '<div class="mut" style="margin-top:6px">За период тренировок нет</div>'}</div>`; }
 function scrProgress() { const has = series().some(x => x.weight), pts = chartData(), hasVol = series().some(x => x[VOLK]), vols = series().filter(x => VOL.some(([k]) => x[k]));
   const a = S.activity[dkey()], wr = weeklyReport(), st = S.awardStreak ? S.awardStreak.current : streak();
-  const wk = []; for (let i = 6; i >= 0; i--) { const d = addD(new Date(), -i), c = dayColor(dkey(d)); wk.push(`<div style="text-align:center;font-size:10.5px;color:var(--mut)"><div style="width:30px;height:30px;border-radius:50%;margin:0 auto 3px;background:${c ? COL[c] : '#ECE5D6'}"></div>${d.toLocaleDateString('ru-RU', {weekday: 'short'})}</div>`); }
-  const steps7 = []; for (let i = 6; i >= 0; i--) steps7.push(S.activity[dkey(addD(new Date(), -i))]?.steps || 0); const mx = Math.max(...steps7, 1);
+  const wk = []; for (let i = 6; i >= 0; i--) { const d = addD(mskD(), -i), c = dayColor(dkey(d)); wk.push(`<div style="text-align:center;font-size:10.5px;color:var(--mut)"><div style="width:30px;height:30px;border-radius:50%;margin:0 auto 3px;background:${c ? COL[c] : '#ECE5D6'}"></div>${d.toLocaleDateString('ru-RU', {weekday: 'short'})}</div>`); }
+  const steps7 = []; for (let i = 6; i >= 0; i--) steps7.push(S.activity[dkey(addD(mskD(), -i))]?.steps || 0); const mx = Math.max(...steps7, 1);
   return `<div class="scr"><div class="hd"><div class="h1">Прогресс</div><button class="btn sm" data-act="measure">+ Замеры</button></div>
   <div style="padding:0 16px"><div class="seg">${[['week', 'Неделя'], ['month', 'Месяц'], ['m3', '3 месяца'], ['m6', '6 месяцев']].map(([v, t]) => `<button data-act="period" data-v="${v}" class="${PERIOD === v ? 'on' : ''}">${t}</button>`).join('')}</div></div>
   ${weightCard(pts, has)}
@@ -925,13 +927,13 @@ const blobToDataURL = b => new Promise(r => { const f = new FileReader(); f.onlo
 function pdfSheet() { const can = !!(BPKEY && BP_LIST && BP_LIST.length);
   sheet(`<div class="hd"><div class="h1" style="font-size:21px">Экспорт в PDF</div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
   <form id="pdff" style="padding:0 16px"><div class="seg" id="pdfP">${[['7', 'Неделя'], ['30', 'Месяц'], ['91', '3 мес'], ['182', '6 мес'], ['own', 'Свой']].map(([v, t], i) => `<button type="button" data-v="${v}" class="${i === 1 ? 'on' : ''}">${t}</button>`).join('')}</div>
-  <div class="g2" id="pdfOwn" style="display:none"><label class="fld"><span>С</span><input type="date" name="from" value="${dkey(addD(new Date(), -29))}"></label><label class="fld"><span>По</span><input type="date" name="to" value="${dkey()}"></label></div>
+  <div class="g2" id="pdfOwn" style="display:none"><label class="fld"><span>С</span><input type="date" name="from" value="${dkey(addD(mskD(), -29))}"></label><label class="fld"><span>По</span><input type="date" name="to" value="${dkey()}"></label></div>
   <div class="card" style="margin:0 0 12px">${[['diary', 'Дневник по дням'], ['kbju', 'Сводка КБЖУ и соблюдение нормы'], ['weight', 'Вес, тренд и цель'], ['vol', 'Замеры тела'], ['act', 'Активность'], ['water', 'Вода']].map(([k, t]) => `<label class="pchk"><input type="checkbox" name="${k}" checked><span>${t}</span></label>`).join('')}
   ${can ? '<label class="pchk"><input type="checkbox" name="bp"><span>Фото «до/после» (раздел открыт вторым PIN)</span></label>' : '<div class="mut" style="margin-top:6px">Фото «до/после» в отчёт не попадают. Чтобы добавить их, откройте раздел вторым PIN в «Прогрессе».</div>'}</div>
   <div class="mut" style="margin-bottom:12px;line-height:1.5">PDF собирается прямо на телефоне, данные никуда не отправляются.</div><button class="btn" id="pdfGo">Создать PDF</button></form>`);
   let per = '30'; document.querySelectorAll('#pdfP button').forEach(b => b.onclick = () => { document.querySelectorAll('#pdfP button').forEach(x => x.classList.toggle('on', x === b)); per = b.dataset.v; $('#pdfOwn').style.display = per === 'own' ? '' : 'none'; });
   $('#pdff').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target); let from, to = dkey();
-    if (per === 'own') { from = f.get('from'); to = f.get('to'); if (!from || !to || from > to) return toast('Проверьте даты периода'); } else from = dkey(addD(new Date(), -(+per - 1)));
+    if (per === 'own') { from = f.get('from'); to = f.get('to'); if (!from || !to || from > to) return toast('Проверьте даты периода'); } else from = dkey(addD(mskD(), -(+per - 1)));
     const sec = {}; for (const k of ['diary', 'kbju', 'weight', 'vol', 'act', 'water', 'bp']) sec[k] = !!f.get(k); if (!can) sec.bp = false;
     const btn = $('#pdfGo'); btn.disabled = true; btn.textContent = 'Собираю PDF…';
     try { const blob = await buildPdf(from, to, sec); await deliverPdf(blob, `nutricio-${from}_${to}.pdf`); closeSheet(); }
