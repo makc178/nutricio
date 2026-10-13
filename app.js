@@ -126,6 +126,7 @@ async function ghGetJson(tok, path) { const r = await fetch(`${ghUrl(path)}?ref=
 async function ghPut(tok, path, obj, msg) { for (let i = 0; i < 3; i++) { let sha; try { const g = await fetch(`${ghUrl(path)}?ref=${BRANCH}&_=${Date.now()}`, {headers: ghH(tok), cache: 'no-store'}); if (g.ok) sha = (await g.json()).sha; } catch (e) {}
     const r = await fetch(ghUrl(path), {method: 'PUT', headers: ghH(tok), body: JSON.stringify({message: msg, branch: BRANCH, sha, content: b64(enc.encode(JSON.stringify(obj)))})});
     if (r.ok) return; if (r.status !== 409 && r.status !== 422) throw new Error('GitHub ' + r.status); } throw new Error('конфликт версий'); }
+async function ghPutRaw(tok, path, bytes, msg) { const r = await fetch(ghUrl(path), {method: 'PUT', headers: ghH(tok), body: JSON.stringify({message: msg, branch: BRANCH, content: b64(bytes)})}); if (!r.ok && r.status !== 422) throw new Error('GitHub ' + r.status); }
 async function ghList(tok, dir) { const r = await fetch(`${ghUrl(dir)}?ref=${BRANCH}&_=${Date.now()}`, {headers: ghH(tok), cache: 'no-store'}); if (r.status === 404) return []; if (!r.ok) throw new Error('GitHub ' + r.status); return r.json(); }
 async function ghDel(tok, path, sha) { await fetch(ghUrl(path), {method: 'DELETE', headers: ghH(tok), body: JSON.stringify({message: 'imported ' + path, sha, branch: BRANCH})}); }
 let syncT = null, SYNC_ST = '';
@@ -265,7 +266,7 @@ function tips() { const k = dkey(), now = new Date(), h = now.getHours(), out = 
 /* ---------- каркас ---------- */
 async function start() { await hashImport(); if (!S.profile) return onboarding(); await maintenance(); await checkBadges(); render(); if (S.sync?.token) { try { await importInbox(S.sync.token); } catch (e) {} } syncNow(); txLoop(); }
 function render() { if (S?.profile && S.plan && S.profile.age0 != null && S.profile.planAge !== pAge(S.profile)) { recalcPlan(); save(); }
-  const y = window.scrollY; app().innerHTML = (TAB === 'food' ? scrFood() : TAB === 'calendar' ? scrCalendar() : TAB === 'progress' ? scrProgress() : scrProfile()) + nav(); bind(); window.scrollTo(0, y);
+  const y = window.scrollY; app().innerHTML = (TAB === 'food' ? scrFood() : TAB === 'calendar' ? scrCalendar() : TAB === 'progress' ? scrProgress() : scrProfile()) + nav(); bind(); balBind(); window.scrollTo(0, y);
   if (TAB === 'profile') bindProfileForm(); if (TAB === 'calendar') bindCalendar(); if (TAB === 'progress' && BPKEY) bpRenderRow(); warnApply(); }
 function nav() { const b = (t, n, i) => `<button data-tab="${t}" class="${TAB === t ? 'on' : ''}">${ic(i)}${n}</button>`;
   return `<nav class="nav nav5">${b('food', 'Питание', 'pitanie')}<button data-tab="calendar" class="${TAB === 'calendar' ? 'on' : ''}"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="8.5" cy="14.5" r=".9" fill="currentColor"/><circle cx="12" cy="14.5" r=".9" fill="currentColor"/></svg></span>Календарь</button><button class="plus" id="plus" aria-label="Добавить">+</button>${b('progress', 'Прогресс', 'grafiki')}${b('profile', 'Профиль', 'profil')}</nav>`; }
@@ -401,7 +402,7 @@ function calCardD(k, t, norm) { const left = norm.kcal - t.kcal, q = norm.kcal ?
   <div class="mut" style="margin-top:6px">${fmtN(r0(t.kcal))} из ${fmtN(r0(norm.kcal))} ккал</div><div class="cckb"><i style="width:${Math.min(100, r0(q * 100))}%;background:${COL[kc]}"></i></div>${actBonus(k) ? `<div class="actb" style="margin-top:6px">+${actBonus(k)} ккал за активность</div>` : ''}</div></div></div>`; }
 function scrFood() { const k = DAY, {lim, eaten, norm} = mealLimitsFor(k), t = sumItems(dayItems(k)), dc = C.color(t.kcal, norm.kcal, 'kcal'), left = norm.kcal - t.kcal, st = streak(), isToday = k === dkey(), d = parseD(k), a = S.activity[k];
   return `<div class="scr"><div class="hd"><div><div class="row" style="gap:6px"><button class="lnk" data-act="day" data-n="-1" aria-label="Предыдущий день">‹</button><span class="mut">${isToday ? 'Сегодня, ' : ''}${d.toLocaleDateString('ru-RU', {weekday: 'long', day: 'numeric', month: 'long'})}</span>${isToday ? '' : '<button class="lnk" data-act="day" data-n="1" aria-label="Следующий день">›</button>'}</div><div class="h1">Питание</div></div>${st ? `<div style="font-weight:700;font-size:13px" class="gold">🔥 ${st} ${plural(st, 'день', 'дня', 'дней')}</div>` : ''}</div>
-  ${calCardD(k, t, norm)}
+  ${calCardD(k, t, norm)}${balLine(k)}
   ${tips().map(x => `<div class="tip">💡 ${esc(x)}</div>`).join('')}
   ${MEALS.map(([m, tn, icn]) => { const e = eaten[m], l = lim[m], c = C.color(e.kcal, l.kcal, 'kcal'), items = dayItems(k).filter(x => x.meal === m);
     return `<div class="card row" style="padding:12px 14px;cursor:pointer" data-act="meal" data-m="${m}"><div class="ib">${ic(icn)}</div><div class="sp"><div style="display:flex;justify-content:space-between"><b style="font-size:15px">${tn}</b><b style="font-size:14px;color:${e.kcal ? COL[c] : 'var(--mut)'}">${r0(e.kcal)} / ${r0(l.kcal)}</b></div>
@@ -410,7 +411,7 @@ function scrFood() { const k = DAY, {lim, eaten, norm} = mealLimitsFor(k), t = s
 function mealSheet(m) { setTimeout(() => { const h = document.querySelector('#ov .sheet'); if (h) h.dataset.mealsheet = m; });  const items = dayItems(DAY).filter(x => x.meal === m), {lim} = mealLimitsFor(DAY), t = sumItems(items);
   sheet(`<div class="hd"><div><div class="mut">${fmtD(parseD(DAY))}</div><div class="h1" style="font-size:21px">${MNAME[m]}</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
   <div class="card"><div class="mut" style="margin-bottom:6px">${r0(t.kcal)} из ${r0(lim[m].kcal)} ккал · Б ${r0(t.p)} · Ж ${r0(t.f)} · У ${r0(t.c)}</div>
-  ${items.length ? items.map(x => `<div class="li${TX_FLASH.has(x.id) ? ' txflash' : ''}"><div class="sp"><b style="font-size:14px">${esc(x.name)}</b>${x.pend ? ` <span class="txpend"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>уточняется</span>` : x.refined ? ' <span class="txok">уточнено</span>' : ''}<div class="mut">${x.g ? r0(x.g) + ' г · ' : ''}Б ${r1(x.p)} · Ж ${r1(x.f)} · У ${r1(x.c)}${x.est ? ' · ≈ оценка' : ''}${x.photo ? ' · есть фото' : ''}</div></div><b>${r0(x.kcal)}</b><button class="x" style="font-size:20px" data-act="delItem" data-id="${x.id}" data-m="${m}" aria-label="Удалить">×</button></div>`).join('') : '<div class="empty">В этом приёме пока ничего нет</div>'}</div>
+  ${items.length ? items.map(x => `<div class="li${TX_FLASH.has(x.id) ? ' txflash' : ''}">${x.photo ? `<img data-ph="${x.photo}" alt="" style="width:40px;height:40px;border-radius:10px;object-fit:cover;margin-right:10px;flex:none">` : ''}<div class="sp"><b style="font-size:14px">${esc(x.name)}</b>${x.pend ? ` <span class="txpend"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>уточняется</span>` : x.refined ? ' <span class="txok">уточнено</span>' : ''}<div class="mut">${x.g ? r0(x.g) + ' г · ' : ''}Б ${r1(x.p)} · Ж ${r1(x.f)} · У ${r1(x.c)}${x.est ? ' · ≈ оценка' : ''}${x.photo ? ' · есть фото' : ''}</div></div><b>${r0(x.kcal)}</b><button class="x" style="font-size:20px" data-act="delItem" data-id="${x.id}" data-m="${m}" aria-label="Удалить">×</button></div>`).join('') : '<div class="empty">В этом приёме пока ничего нет</div>'}</div>
   <div style="padding:0 16px"><button class="btn" data-act="addTo" data-m="${m}">Добавить в «${MNAME[m]}»</button></div>`); }
 let CUR_MEAL = 'breakfast';
 function addSheet(m) { CUR_MEAL = m; const rc = recent(); sheet(`<div class="hd"><div><div class="mut">${fmtD(parseD(DAY))}</div><div class="h1" style="font-size:21px">Добавить</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
@@ -420,7 +421,7 @@ function addSheet(m) { CUR_MEAL = m; const rc = recent(); sheet(`<div class="hd"
   ${rc.length ? `<div class="card" style="margin-top:14px"><h3>Недавнее</h3>${rc.slice(0, 4).map((x, i) => `<div class="li" style="cursor:pointer" data-act="quickRecent" data-i="${i}"><div class="sp"><b style="font-size:14px">${esc(x.name)}</b><div class="mut">${x.g ? r0(x.g) + ' г · ' : ''}${r0(x.kcal)} ккал</div></div><span class="pill">+</span></div>`).join('')}</div>` : ''}`);
   document.querySelectorAll('#mealSeg button').forEach(b => b.onclick = () => { document.querySelectorAll('#mealSeg button').forEach(x => x.classList.remove('on')); b.classList.add('on'); CUR_MEAL = b.dataset.v; }); }
 function recent() { const seen = new Set(), out = []; for (const k of Object.keys(S.meals).sort().reverse()) for (const x of [...S.meals[k]].reverse()) { const id = x.name + '|' + r0(x.g); if (!seen.has(id)) { seen.add(id); out.push(x); } if (out.length >= 6) return out; } return out; }
-async function addItem(it) { (S.meals[DAY] = S.meals[DAY] || []).push({id: uid(), meal: CUR_MEAL, t: Date.now(), ...it}); await save(); closeSheet(); render(); toast(`Добавлено: ${it.name}`); await checkBadges(); }
+async function addItem(it) { (S.meals[DAY] = S.meals[DAY] || []).push({id: uid(), meal: CUR_MEAL, t: Date.now(), ...it}); await save(); closeSheet(); render(); balEv('meal_added'); render(); toast(`Добавлено: ${it.name}`); await checkBadges(); }
 function portionForm(food, src) { const per100 = food.per !== 'portion';
   const pc = per100 ? pieceOf(food) : null;
   sheet(`<div class="hd"><div><div class="mut">${MNAME[CUR_MEAL]}</div><div class="h1" style="font-size:20px">${esc(food.name)}</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
@@ -448,14 +449,19 @@ function searchSheet() { sheet(`<div class="hd"><div class="h1" style="font-size
       $('#qr').innerHTML = RES.length ? RES.map((x, i) => `<div class="li" style="cursor:pointer" data-i="${i}"><div class="sp"><b style="font-size:14px">${esc(x.name)}</b><div class="mut">${x.brand ? esc(x.brand) + ' · ' : ''}${x.mine ? 'мой продукт · ' : ''}${r0(x.kcal)} ккал / ${x.per === 'portion' ? 'порция' : '100 г'}</div></div><span class="pill">+</span></div>`).join('') : '<div class="empty">Ничего не найдено. Попробуйте другое слово или добавьте вручную.</div>';
       $('#qr').querySelectorAll('[data-i]').forEach(e => e.onclick = () => portionForm(RES[+e.dataset.i], RES[+e.dataset.i].mine ? 'my' : 'db')); };
     q.oninput = draw; draw(); }); }
-function manualSheet(photoId) { sheet(`<div class="hd"><div><div class="mut">${MNAME[CUR_MEAL]}</div><div class="h1" style="font-size:21px">${photoId ? 'Фото сохранено' : 'Своё блюдо'}</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
-  ${photoId ? '<div class="tip">Распознавание блюда по фото появится позже. Пока введите название и КБЖУ вручную — фото останется в записи в зашифрованном виде.</div>' : ''}
-  <form id="mf" style="padding:0 16px"><label class="fld"><span>Название</span><input name="name" autocomplete="off"></label>
-  <div class="g2"><label class="fld"><span>Вес порции, г</span><input name="g" inputmode="decimal"></label><label class="fld"><span>Калории, ккал</span><input name="kcal" inputmode="decimal" required></label></div>
-  <div class="g3"><label class="fld"><span>Белки, г</span><input name="p" inputmode="decimal"></label><label class="fld"><span>Жиры, г</span><input name="f" inputmode="decimal"></label><label class="fld"><span>Углеводы, г</span><input name="c" inputmode="decimal"></label></div>
+function manualSheet(photoId) { const OPT = photoId ? ' <i class="opt">необязательно</i>' : ''; sheet(`<div class="hd"><div><div class="mut">${MNAME[CUR_MEAL]}</div><div class="h1" style="font-size:21px">${photoId ? 'Фото сохранено' : 'Своё блюдо'}</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
+  ${photoId ? '<div class="tip">Нутрициолог посчитает КБЖУ по фото. Название и вес можно не заполнять, но с ними оценка точнее</div>' : ''}
+  <form id="mf" style="padding:0 16px"${photoId ? ' novalidate' : ''}>${photoId ? `<img class="phth" data-ph="${photoId}" alt="" style="width:64px;height:64px;border-radius:12px;object-fit:cover;display:block;margin:4px 0 10px">` : ''}<label class="fld"><span>Название${OPT}</span><input name="name" autocomplete="off"></label>
+  <div class="g2"><label class="fld"><span>Вес порции, г${OPT}</span><input name="g" inputmode="decimal"></label><label class="fld"><span>Калории, ккал${OPT}</span><input name="kcal" inputmode="decimal"${photoId ? '' : ' required'}></label></div>
+  <div class="g3"><label class="fld"><span>Белки, г${OPT}</span><input name="p" inputmode="decimal"></label><label class="fld"><span>Жиры, г${OPT}</span><input name="f" inputmode="decimal"></label><label class="fld"><span>Углеводы, г${OPT}</span><input name="c" inputmode="decimal"></label></div>
   <label class="fld" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="keep" style="width:auto" checked><span style="margin:0">Сохранить в «Мои продукты»</span></label>
   <button class="btn" type="submit">Добавить</button></form>`);
-  $('#mf').onsubmit = e => { e.preventDefault(); const f = new FormData(e.target); const g = n => num(f.get(n)) || 0; const name = f.get('name').trim(); if (!name) return;
+  $('#mf').onsubmit = e => { e.preventDefault(); const f = new FormData(e.target); const g = n => num(f.get(n)) || 0; const name = f.get('name').trim() || (photoId ? 'Блюдо по фото' : ''); if (!name) return;
+    if (photoId) { const rq = 'p' + Date.now().toString(36) + uid().slice(0, 6), bot = !!S.sync?.token, nm = f.get('name').trim(), gg = g('g') || null;
+      (S.meals[DAY] = S.meals[DAY] || []).push({id: uid(), meal: CUR_MEAL, t: Date.now(), name, g: gg, kcal: g('kcal'), p: g('p'), f: g('f'), c: g('c'), src: 'photo', photo: photoId, est: 1, rq, pend: 1});
+      if (f.get('keep') && nm && g('kcal') && !S.customFoods.some(x => x.name === nm)) S.customFoods.push({id: uid(), name: nm, per: 'portion', g: gg, kcal: g('kcal'), p: g('p'), f: g('f'), c: g('c')});
+      (S.txReq = S.txReq || []).push({id: rq, kind: 'photo', photo: photoId, date: DAY, meal: CUR_MEAL, name: nm || undefined, grams: gg || undefined, sent: 0});
+      (async () => { await save(); if (bot) txPoll(); closeSheet(); balEv('meal_added'); render(); txToast(bot); await checkBadges(); })(); return; }
     const it = {name, g: g('g') || null, kcal: g('kcal'), p: g('p'), f: g('f'), c: g('c'), src: photoId ? 'photo' : 'manual'}; if (photoId) it.photo = photoId;
     if (f.get('keep') && !S.customFoods.some(x => x.name === name)) S.customFoods.push({id: uid(), name, per: 'portion', g: it.g, kcal: it.kcal, p: it.p, f: it.f, c: it.c});
     addItem(it); }; }
@@ -537,19 +543,22 @@ function txList(items) { const box = $('#txr'); if (!box) return;
       const rq = 't' + Date.now().toString(36) + uid().slice(0, 6), bot = !!S.sync?.token, rows = items.length ? items : [{name: TX_LAST.slice(0, 80) || 'Запись текстом', grams: null, kcal: 0, p: 0, f: 0, c: 0, confidence: 0}];
       for (const x of rows) day.push({id: uid(), meal: CUR_MEAL, t: Date.now(), name: x.name, g: x.grams || null, kcal: x.kcal || 0, p: x.p || 0, f: x.f || 0, c: x.c || 0, src: 'text', est: !(x.confidence >= .7), rq, pend: 1});
       (S.txReq = S.txReq || []).push({id: rq, date: DAY, meal: CUR_MEAL, text: TX_LAST, sent: 0});
-      TX_LAST = ''; await save(); if (bot) txPoll(); closeSheet(); render(); if (bot) toast('Данные приняты, Нутрициолог считает КБЖУ', 2500); else { toast('Сохранено в очереди. ', 2500); const e = [...document.querySelectorAll('.toast')].pop(); if (e) { const l = document.createElement('a'); l.textContent = 'Включите резервную копию'; l.className = 'tlnk'; l.onclick = () => { e.remove(); TAB = 'profile'; render(); setTimeout(() => { const h = [...document.querySelectorAll('h3')].find(x => x.textContent === 'Резервная копия'); if (h) h.scrollIntoView({behavior: 'smooth', block: 'center'}); }, 80); }; e.appendChild(l); } }; await checkBadges(); }; };
+      TX_LAST = ''; await save(); if (bot) txPoll(); closeSheet(); render(); txToast(bot); await checkBadges(); }; };
   draw(); }
 
+function txToast(bot) { if (bot) toast('Данные приняты, Нутрициолог считает КБЖУ', 2500); else { toast('Сохранено в очереди. ', 2500); const e = [...document.querySelectorAll('.toast')].pop(); if (e) { const l = document.createElement('a'); l.textContent = 'Включите резервную копию'; l.className = 'tlnk'; l.onclick = () => { e.remove(); TAB = 'profile'; render(); setTimeout(() => { const h = [...document.querySelectorAll('h3')].find(x => x.textContent === 'Резервная копия'); if (h) h.scrollIntoView({behavior: 'smooth', block: 'center'}); }, 80); }; e.appendChild(l); } }; }
+/* миниатюры фото блюд: расшифровываются локально */
+new MutationObserver(() => document.querySelectorAll('img[data-ph]:not([data-ok])').forEach(async im => { im.dataset.ok = 1; try { const bx = await idb.get('dish:' + im.dataset.ph); if (bx && KEY) im.src = URL.createObjectURL(new Blob([await open_(KEY, bx)], {type: 'image/jpeg'})); else im.remove(); } catch (e) { im.remove(); } })).observe(document.documentElement, {childList: true, subtree: true});
 /* ---------- обмен с ботом-нутрициологом через закрытый репозиторий: text_inbox/<id>.json → text_outbox/<id>.json ---------- */
 let TX_FLASH = new Set(), TX_BUSY = false, TX_T = null;
 async function txPoll() { warnApply();  const tok = S?.sync?.token; if (!tok || TX_BUSY || !KEY) return; TX_BUSY = true; let ch = false;
   try {
-    for (const q of S.txReq || []) { if (q.sent) continue; await ghPut(tok, `text_inbox/${q.id}.json`, {id: q.id, date: q.date, meal: q.meal, text: q.text}, 'text ' + q.id); q.sent = 1; ch = true; }
+    for (const q of S.txReq || []) { if (q.sent) continue; if (q.kind === 'photo') { const bx = await idb.get('dish:' + q.photo); if (bx) await ghPutRaw(tok, `photo_inbox/${q.id}.jpg`, await open_(KEY, bx), 'photo ' + q.id); const o = {id: q.id, date: q.date, meal: q.meal}; if (q.name) o.name = q.name; if (q.grams) o.grams = q.grams; await ghPut(tok, `photo_inbox/${q.id}.json`, o, 'photo ' + q.id); q.sent = 1; ch = true; continue; } await ghPut(tok, `text_inbox/${q.id}.json`, {id: q.id, date: q.date, meal: q.meal, text: q.text}, 'text ' + q.id); q.sent = 1; ch = true; }
     for (const q of [...(S.txReq || [])]) { if (!q.sent) continue; const r = await ghGetJson(tok, `text_outbox/${q.id}.json`); if (!r) continue;
       const arr = Array.isArray(r.json) ? r.json : r.json.items || []; const day = S.meals[q.date] = S.meals[q.date] || [];
       const old = day.filter(x => x.rq === q.id), t0 = old[0]?.t || Date.now(), meal = old[0]?.meal || q.meal;
       S.meals[q.date] = day.filter(x => x.rq !== q.id).concat(arr.filter(x => x && x.name && num(x.kcal) != null).map(x => { const id = uid(); TX_FLASH.add(id);
-        return {id, meal, t: t0, name: String(x.name).slice(0, 80), g: num(x.grams) || null, kcal: num(x.kcal) || 0, p: num(x.p) || 0, f: num(x.f) || 0, c: num(x.c) || 0, src: 'text', rq: q.id, refined: 1, est: num(x.confidence) != null && num(x.confidence) < .7, bsrc: x.source ? String(x.source).slice(0, 40) : undefined}; }));
+        return {id, meal, t: t0, name: String(x.name).slice(0, 80), g: num(x.grams) || null, kcal: num(x.kcal) || 0, p: num(x.p) || 0, f: num(x.f) || 0, c: num(x.c) || 0, src: q.kind === 'photo' ? 'photo' : 'text', ...(q.photo ? {photo: q.photo} : {}), rq: q.id, refined: 1, est: num(x.confidence) != null && num(x.confidence) < .7, bsrc: x.source ? String(x.source).slice(0, 40) : undefined}; }));
       S.txReq = S.txReq.filter(x => x.id !== q.id); await ghDel(tok, r.path || `text_outbox/${q.id}.json`, r.sha); ch = true; }
     const pd = await ghGetJson(tok, 'personal_db.json'); if (pd && Array.isArray(pd.json)) { const v = pd.json.filter(x => x && x.name && num(x.kcal) != null).map(x => ({id: x.id || 'pdb:' + x.name, name: String(x.name), per: x.per === 'portion' ? 'portion' : '100g', g: num(x.g) || null, kcal: num(x.kcal), p: num(x.p) || 0, f: num(x.f) || 0, c: num(x.c) || 0, bot: 1}));
       if (JSON.stringify(v) !== JSON.stringify(S.personalDb || [])) { S.personalDb = v; ch = true; } }
@@ -557,6 +566,127 @@ async function txPoll() { warnApply();  const tok = S?.sync?.token; if (!tok || 
   TX_BUSY = false; if (ch) { await save(); if (!$('#ov') || TX_FLASH.size) { const m = $('#ov') && document.querySelector('#ov .sheet[data-mealsheet]'); if (m) { render(); mealSheet(m.dataset.mealsheet); } else if (!$('#ov')) render(); } setTimeout(() => TX_FLASH.clear(), 2500); } }
 function txLoop() { clearInterval(TX_T); txPoll(); TX_T = setInterval(() => { if (document.visibilityState === 'visible') txPoll(); }, 60000); }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') txPoll(); });
+
+
+/* ---------- Балагур: строка под итогом дня, «Факт дня», «Анекдот дня» (тексты общие, без личных данных) ---------- */
+const BAL = {
+  "morning": [
+    "Доброе утро! Холодильник уже скучал по вам.",
+    "С добрым утром! Завтрак — это единственная встреча, на которую стоит не опаздывать.",
+    "Утро доброе! Каша сама себя не съест, но очень надеется.",
+    "Здравствуйте! Сегодня отличный день, чтобы быть в норме.",
+    "Доброе утро! Ваш желудок прислал уведомление: «Где завтрак?»",
+    "Новый день — новые калории. Распорядимся ими с умом!",
+    "Утро! Кофе уже проснулся, теперь ваша очередь.",
+    "Доброе утро! Сегодня в меню: хорошее настроение и что-нибудь полезное.",
+    "Приветствую! Весы ещё спят, а мы уже планируем день."
+  ],
+  "meal_added": [
+    "Записано! Бухгалтерия желудка довольна.",
+    "Принято. Еда учтена, совесть чиста.",
+    "Отлично! Даже шеф-повар позавидовал бы такому учёту.",
+    "Записал. Ваш дневник питания растёт, а вы молодец.",
+    "Вкусно было? Я верю, что да.",
+    "Готово! Калории посчитаны поштучно и с уважением.",
+    "Есть! Учёт — первый шаг к порядку, второй — к десерту по плану.",
+    "Внесено. Ещё немного — и меня можно брать в ресторанные критики.",
+    "Записано аккуратнее, чем в налоговой."
+  ],
+  "in_norm": [
+    "День в норме! Можно гордо пройтись по квартире.",
+    "Норма соблюдена. Аплодисменты от всего приложения!",
+    "Вы в норме — и это не диагноз, а достижение.",
+    "Идеально! Даже калькулятор прослезился.",
+    "Норма выполнена. Нутрициолог одобрительно кивает.",
+    "Ровно как по нотам. Вам бы оркестром дирижировать!",
+    "Сегодня всё по плану. Завтра повторим?",
+    "Баланс найден! Йоги отдыхают.",
+    "Отличный день: цифры довольны, вы — тоже, надеюсь."
+  ],
+  "over": [
+    "Сегодня чуть больше — бывает. Завтра новый день.",
+    "Ничего страшного, один день ничего не решает.",
+    "Вы всё равно молодец, что записываете. Это главное.",
+    "Иногда организму нужно чуть больше. Завтра мягко вернёмся в план.",
+    "Не переживайте, прогресс — это неделя, а не один ужин.",
+    "Главное — вы в курсе. А значит, всё под контролем.",
+    "Отдохните и выпейте воды. Завтра продолжим вместе.",
+    "Один день сверху — не повод для огорчения. Вы на верном пути.",
+    "Спасибо за честность в записях — это сильная сторона."
+  ],
+  "water": [
+    "Буль-буль! Клетки передают вам спасибо.",
+    "Стакан воды засчитан. Вы теперь немного родник.",
+    "Отлично! Верблюды смотрят на вас с завистью.",
+    "Вода — лучший напиток, который не надо закусывать.",
+    "Засчитано! Ваш внутренний фикус расцвёл.",
+    "Ещё стакан — и можно открывать собственный источник.",
+    "Гидратация на высоте! Аквариум бы позавидовал.",
+    "Вода выпита, бонус к бодрости получен."
+  ],
+  "workout": [
+    "Тренировка записана! Диван официально в обиде.",
+    "Спорт засчитан. Мышцы пишут вам благодарственное письмо.",
+    "Отлично! Где-то один пончик испуганно вздрогнул.",
+    "Вы сегодня в форме — во всех смыслах!",
+    "Тренировка — есть! Теперь можно гордиться с чистой совестью.",
+    "Браво! Лифт сегодня без работы остался.",
+    "Пот — это охлаждение организма, а жир уходит с дыханием. Вы дышали отлично!",
+    "Записано! Чемпионы тоже начинали с одной тренировки.",
+    "Сила, ловкость и немного одышки — полный набор героя."
+  ],
+  "weight_down": [
+    "Минус на весах — плюс к настроению!",
+    "Весы сегодня сговорчивые. Так держать!",
+    "Результат есть! Ремень уже ищет новую дырочку.",
+    "Отличная динамика! Гравитация теряет к вам интерес.",
+    "Поздравляю! Ваши старания видны даже весам.",
+    "Шаг за шагом — и вот результат. Вы молодец!",
+    "Вес снижается, самооценка растёт. Прекрасный обмен!",
+    "Весы улыбнулись. Заслуженно!"
+  ],
+  "streak": [
+    "Несколько дней подряд в норме! Это уже не случайность, а характер.",
+    "Серия продолжается! Вы прямо сериал, который хочется смотреть.",
+    "Дни в норме идут один за другим. Привычка, вы ли это?",
+    "Стабильность — признак мастерства. Снимаю шляпу!",
+    "Ещё один день в копилку! Скоро придётся брать копилку побольше.",
+    "Ваша серия впечатляет даже меня, а я видел многое.",
+    "Подряд и без пропусков — швейцарские часы отдыхают.",
+    "Так держать! Ещё немного — и можно писать мемуары о дисциплине."
+  ],
+  "_extras": {
+    "fact_of_day": "Факт дня: раз в сутки короткий забавный факт о еде (например: «Морковь изначально была фиолетовой»). Показывать при первом открытии.",
+    "joke_of_day": "Анекдот дня: короткий добрый анекдот на тему еды и спорта, без стыда за вес. Кнопка «Ещё анекдот».",
+    "examples": [
+      "Факт дня: мёд почти не портится — в нём слишком мало воды для микробов.",
+      "Факт дня: бананы — ягоды, а клубника — нет. Ботаника любит шутить.",
+      "Анекдот: — Доктор, мне можно сладкое? — Можно. Главное — записать в Nutricio, и оно уже наполовину полезное."
+    ],
+    "note_nutri": "weight_down показывать только при цели «снижение». Для набора — та же логика с ростом веса. Факты дня — только проверенные."
+  }
+};
+let BAL_EV = null, BAL_I = 0, JOKE_I = null;
+function balEv(t) { BAL_EV = {t, at: Date.now()}; BAL_I = 0; }
+function balList(s) { return Array.isArray(BAL[s]) ? BAL[s] : []; }
+function balFacts() { return (BAL._extras?.examples || []).filter(x => /^Факт дня/.test(x)); }
+function balJokes() { return (BAL._extras?.examples || []).filter(x => /^Анекдот/.test(x)).concat(BAL._extras?.jokes || []); }
+function balDayN() { return Math.floor(Date.now() / 864e5); }
+function balSit(k) { const today = k === dkey(); if (!today) return null;
+  if (BAL_EV && Date.now() - BAL_EV.at < 15 * 60e3) { if (BAL_EV.t === 'weight_down' && S.profile?.goal !== 'loss') {} else return BAL_EV.t; }
+  let first = false; try { first = localStorage.getItem('nc_bal_day') !== k; if (first) localStorage.setItem('nc_bal_day', k); } catch (e) {}
+  if (first || !dayItems(k).length) { if (first && balFacts().length) return 'fact'; return 'morning'; }
+  if (S.profile?.goal === 'loss') { const w = series().filter(x => x.weight); if (w.length > 1 && w[w.length - 1].weight < w[w.length - 2].weight && w[w.length - 1].d === k) return 'weight_down'; }
+  if (streak() >= 3 && new Date().getHours() < 12) return 'streak';
+  if (dayColor(k) === 'green') return 'in_norm';
+  return dayItems(k).length ? 'meal_added' : 'morning'; }
+let BAL_SIT_K = null;
+function balPick(sit) { const l = sit === 'fact' ? balFacts() : balList(sit); if (!l.length) return ''; return l[(balDayN() + BAL_I) % l.length]; }
+function balLine(k) { if (warnOver() && k === dkey()) return ''; const sit = BAL_SIT_K && BAL_SIT_K[0] === k ? BAL_SIT_K[1] : balSit(k); BAL_SIT_K = [k, sit]; if (!sit) return ''; const t = balPick(sit); if (!t) return '';
+  return `<div class="bal" data-sit="${sit}" role="button" aria-label="Следующая фраза"><span class="balsp">✦</span><span class="balt">${esc(t)}</span></div>`; }
+function balBind() { document.querySelectorAll('.bal').forEach(el => el.onclick = () => { const sit = el.dataset.sit || 'over', tx = el.querySelector('.balt') || el; BAL_I++; tx.style.opacity = 0; setTimeout(() => { tx.textContent = sit === 'over' ? balPick('over') : balPick(sit); tx.style.opacity = 1; }, 200); }); }
+function jokeCard() { const j = balJokes(); if (!j.length) return ''; if (JOKE_I == null) JOKE_I = balDayN() % j.length;
+  return `<div class="card jokec"><div class="row" style="justify-content:space-between;align-items:center"><span class="mut" style="font-size:12px"><span class="balsp">✦</span> Анекдот дня от Балагура</span><button class="lnk" data-act="joke">Ещё анекдот</button></div><div class="balt" id="jokeT" style="font:italic 400 13px Manrope,system-ui,sans-serif;color:rgba(46,46,44,.7);margin-top:6px">${esc(j[JOKE_I % j.length].replace(/^Анекдот( дня)?:\s*/, ''))}</div></div>`; }
 
 /* ---------- режим «Перебор»: съедено сегодня > 105 % нормы (с бонусом активности, если включён); сутки по Москве ---------- */
 const mskKey = () => { const d = new Date(Date.now() + 3 * 3600e3); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`; };
@@ -566,7 +696,7 @@ function warnApply() { const over = warnOver(), b = document.body; b.classList.t
   const w = document.createElement('div'); w.className = 'warnbar'; w.textContent = `Перебор +${fmtN(over)} ккал`;
   const kg = [...(S.measures || [])].reverse().find(m => m.weight)?.weight || S.profile.weight, walk = r0((kg ? 3.5 * kg * .5 : 120) / 10) * 10;
   const tips = [`Прогулка 30 минут сожжёт ≈ ${fmtN(walk)} ккал`, 'Завтра новый день, норма уже ждёт'];
-  const t = document.createElement('div'); t.className = 'warntip'; t.textContent = tips[Math.floor(Date.now() / 600e3) % tips.length]; hd.after(w, t); }
+  const t = document.createElement('div'); t.className = 'warntip'; const adv = tips[Math.floor(Date.now() / 600e3) % tips.length]; t.innerHTML = `<span class="balt">${esc(adv)}</span>`; let on = false; t.onclick = () => { const ov = balPick('over'); if (!ov) return; const x = t.querySelector('.balt'); x.style.opacity = 0; setTimeout(() => { on = !on; if (on) BAL_I++; t.classList.toggle('bal2', on); x.textContent = on ? ov : adv; x.style.opacity = 1; }, 200); }; hd.after(w, t); }
 setInterval(() => { if (KEY && S?.profile && document.body.classList.contains('warn') !== !!warnOver()) warnApply(); }, 30000);
 const VEND = 'vendor/';
 function loadScript(src) { return new Promise((ok, no) => { if (document.querySelector(`script[src="${src}"]`)) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error('нет ' + src)); document.head.appendChild(s); }); }
@@ -660,7 +790,7 @@ function activitySheet(d = dkey()) { const a = S.activity[d] || {steps: 0, worko
   <button class="btn">Сохранить</button></form>`);
   document.querySelectorAll('[data-w]').forEach(b => b.onclick = async () => { a.workouts = a.workouts.filter(w => w.id !== b.dataset.w); S.activity[d] = a; await save(); activitySheet(d); });
   $('#af').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target); a.steps = r0(num(f.get('steps')) || 0); a.workouts = a.workouts || [];
-    if (f.get('type') || num(f.get('min'))) a.workouts.push({id: uid(), type: f.get('type') || 'Тренировка', min: r0(num(f.get('min')) || 0), kcal: r0(num(f.get('kcal')) || 0), src: 'manual'});
+    if (f.get('type') || num(f.get('min'))) a.workouts.push({id: uid(), type: f.get('type') || 'Тренировка', min: r0(num(f.get('min')) || 0), kcal: r0(num(f.get('kcal')) || 0), src: 'manual'}), balEv('workout');
     S.activity[d] = a; await save(); closeSheet(); render(); toast('Активность сохранена'); await checkBadges(); }; }
 /* ---------- Прогресс ---------- */
 function chartData() { const tr = trendSeries(), today = new Date(), m = series();
@@ -797,6 +927,7 @@ function bpPin() { let buf = '', first = null; const setting = !S.bpSalt;
 /* ---------- Профиль ---------- */
 function scrProfile() { const p = S.profile, pl = S.plan, appUrl = location.origin + location.pathname;
   return `<div class="scr"><div class="hd"><div class="h1">Профиль</div><button class="btn sm sec" data-act="lock">Заблокировать</button></div>
+  ${jokeCard()}
   <div class="card"><h3>Норма на день <button class="lnk" data-act="plan">подробнее</button></h3><div class="g3" style="grid-template-columns:repeat(4,1fr);text-align:center">${[['ккал', normBase().kcal], ['Б, г', normBase().p], ['Ж, г', normBase().f], ['У, г', normBase().c]].map(([t, v]) => `<div><b style="font-size:17px">${r0(v)}</b><div class="mut">${t}</div></div>`).join('')}</div>
   ${pl.manual ? '<div class="gold" style="margin-top:8px;font-size:12.5px;font-weight:700">Ручная норма</div>' : ''}${pl.manual && pl.suggest ? `<div class="tip" style="margin:10px 0 0;display:flex;gap:8px;align-items:center"><span class="sp">${esc(pl.suggest.text)}</span><button class="btn sm" data-act="applySug">Применить</button></div>` : ''}<button class="btn sec" style="margin-top:10px" data-act="myNorm">Моя норма</button>${!pl.manual && pl.adj ? `<div class="mut" style="margin-top:8px">С учётом автокоррекции ${pl.adj > 0 ? '+' : ''}${pl.adj} ккал</div>` : ''}</div>
   <div class="card"><h3>Где хранятся данные</h3><div class="mut" style="line-height:1.6">Анкета и дневник сохраняются на этом устройстве в зашифрованном виде, повторно их вводить не нужно. Safari и значок на экране «Домой» хранят данные раздельно: пользуйтесь приложением с экрана «Домой» (Поделиться → «На экран „Домой“»). Чтобы данные не потерялись при смене телефона или очистке браузера, включите резервную копию ниже.</div></div>
@@ -825,7 +956,8 @@ const ACTIONS = {
   quickRecent: d => { const {id, meal, t, ...rest} = recent()[+d.i]; addItem(rest); },
   activity: d => activitySheet(d.d), measure: () => measureSheet(),
   period: d => { PERIOD = d.v; render(); }, openDay: d => { DAY = d.d; TAB = 'food'; window.scrollTo(0, 0); render(); }, awGallery: () => awardGallery(), pdf: () => pdfSheet(),
-  waterAdd: async d => { const a = S.activity[d.d] = S.activity[d.d] || {steps: 0, workouts: []}; a.water = (a.water || 0) + 250; await save(); render(); await checkBadges(); },
+  joke: () => { const j = balJokes(); JOKE_I = (JOKE_I + 1) % j.length; const el = $('#jokeT'); if (!el) return; el.style.opacity = 0; setTimeout(() => { el.textContent = j[JOKE_I].replace(/^Анекдот( дня)?:\s*/, ''); el.style.opacity = 1; }, 200); },
+  waterAdd: async d => { const a = S.activity[d.d] = S.activity[d.d] || {steps: 0, workouts: []}; a.water = (a.water || 0) + 250; balEv('water'); await save(); render(); await checkBadges(); },
   waterUndo: async d => { const a = S.activity[d.d]; if (!a || !a.water) return; a.water = Math.max(0, a.water - 250); await save(); render(); toast('Убрано 250 мл'); },
   acceptDl: async () => { const g = goalMath(); if (!g) return; S.profile.deadline = dkey(g.real); await save(); render(); toast(`Срок цели: ${fmtD(g.real)} ${g.real.getFullYear()}`); }, volk: d => { VOLK = d.v; render(); },
   bpUnlock: () => bpPin(), bpLock: () => { BPKEY = null; BP_LIST = null; BP_URLS.forEach(u => URL.revokeObjectURL(u)); BP_URLS = []; render(); },
