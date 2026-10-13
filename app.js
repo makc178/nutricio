@@ -418,10 +418,13 @@ async function addItem(it) { (S.meals[DAY] = S.meals[DAY] || []).push({id: uid()
 function portionForm(food, src) { const per100 = food.per !== 'portion';
   sheet(`<div class="hd"><div><div class="mut">${MNAME[CUR_MEAL]}</div><div class="h1" style="font-size:20px">${esc(food.name)}</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
   <div class="card"><div class="mut" style="margin-bottom:10px">${per100 ? 'На 100 г' : 'На порцию'}: ${r0(food.kcal)} ккал · Б ${r1(food.p)} · Ж ${r1(food.f)} · У ${r1(food.c)}${food.est ? ' · ≈ оценка' : ''}</div>
-  <label class="fld"><span>${per100 ? 'Вес порции, г' : 'Количество порций'}</span><input id="pg" inputmode="decimal" value="${per100 ? (food.g || 100) : 1}"></label><div id="pv" style="font-weight:700"></div></div>
+  <label class="fld"><span>${per100 ? 'Вес порции, г' : 'Количество порций'}</span><div class="qrow"><button type="button" class="qb" data-d="-1" aria-label="Меньше">−</button><input id="pg" inputmode="decimal" value="${per100 ? (food.g || 100) : 1}"><button type="button" class="qb" data-d="1" aria-label="Больше">+</button></div></label>${per100 ? '<div class="qpre">' + [25, 50, 75].map(v => `<button type="button" class="qp" data-v="${v}">${v} г</button>`).join('') + '</div>' : ''}<div id="pv" style="font-weight:700"></div></div>
   <div style="padding:0 16px"><button class="btn" id="padd">Добавить</button></div>`);
   const calc = () => { const q = num($('#pg').value) || 0, k = per100 ? q / 100 : q; return {name: food.name, g: per100 ? q : food.g ? food.g * q : null, kcal: food.kcal * k, p: (food.p || 0) * k, f: (food.f || 0) * k, c: (food.c || 0) * k, src, est: !!food.est}; };
   const upd = () => { const x = calc(); $('#pv').textContent = `${r0(x.kcal)} ккал · Б ${r1(x.p)} · Ж ${r1(x.f)} · У ${r1(x.c)}`; }; $('#pg').oninput = upd; upd();
+  { const st = per100 ? 10 : 1, mn = per100 ? 1 : 0.5, pg = $('#pg'), set = v => { pg.value = String(+v.toFixed(2)); upd(); };
+    document.querySelectorAll('.qb').forEach(b => b.onclick = () => { const q = num(pg.value) || 0, n = q + st * +b.dataset.d; set(Math.max(mn, n)); });
+    document.querySelectorAll('.qp').forEach(b => b.onclick = () => set(+b.dataset.v)); }
   $('#padd').onclick = () => { if (!(num($('#pg').value) > 0)) return toast('Укажите количество'); addItem(calc()); }; }
 let FOODS = null, RES = [];
 async function loadFoods() { if (FOODS) return FOODS; try { const r = await fetch('data/foods.json'); if (!r.ok) throw 0; const j = await r.json(); FOODS = (Array.isArray(j) ? j : j.items || []).map(x => ({...x, name: x.name_ru || x.name, n: ((x.name_ru || x.name || '') + ' ' + (x.brand || '')).toLowerCase().replace(/ё/g, 'е')})); } catch (e) { FOODS = []; } return FOODS; }
