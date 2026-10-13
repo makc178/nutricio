@@ -170,5 +170,9 @@ input[type=date]::-webkit-date-and-time-value{text-align:left}
 .btn.txsave{background:var(--gold)}.btn.txsave:disabled{opacity:.5}
 .txpend,.txok{display:inline-flex;align-items:center;gap:3px;border-radius:20px;padding:2px 7px;font-size:10.5px;font-weight:700;vertical-align:1px}.txpend{background:#ECE5D6;color:var(--mut)}.txok{background:#7A9A6E22;color:var(--btn)}
 .txflash{animation:txfl 1.6s ease-out 1}@keyframes txfl{0%{background:#7A9A6E00}25%{background:#7A9A6E44}100%{background:#7A9A6E00}}
+html,body{transition:background-color .4s ease}.btn,.seg button.on,.pill,.bar i,.cckb i,circle{transition:background-color .4s ease,stroke .4s ease,color .4s ease}
+body.warn{--bg:#FBEDEA;--sage:#B8473A;--btn:#B8473A;--line:#F0D9D4}body.warn #app{background:var(--bg)}
+body.warn circle[stroke="#7A9A6E"],body.warn circle[stroke="#A9C29C"],body.warn circle[stroke="#6E9A5A"]{stroke:#B8473A}body.warn .pill{background:#B8473A1F;color:#B8473A}body.warn .tip{background:#B8473A14}
+.warntip{background:#FBEDEA;color:#7A3A30;font:400 13px Manrope,system-ui,sans-serif;text-align:center;padding:2px 16px 10px;animation:wbIn .4s ease}.warnbar{background:#B8473A;color:#fff;font:600 14px Manrope,system-ui,sans-serif;text-align:center;padding:7px 16px;margin:0;animation:wbIn .4s ease}@keyframes wbIn{from{opacity:0}to{opacity:1}}
 </style></head><body><div id="app"></div>
 <script src="calc.js"></script><script src="awards.js"></script><script src="manual.js"></script><script src="health.js"></script><script src="label.js"></script><script src="app.js"></script></body></html>

@@ -259,7 +259,7 @@ function tips() { const k = dkey(), now = new Date(), h = now.getHours(), out = 
 async function start() { await hashImport(); if (!S.profile) return onboarding(); await maintenance(); await checkBadges(); render(); if (S.sync?.token) { try { await importInbox(S.sync.token); } catch (e) {} } syncNow(); txLoop(); }
 function render() { if (S?.profile && S.plan && S.profile.age0 != null && S.profile.planAge !== pAge(S.profile)) { recalcPlan(); save(); }
   const y = window.scrollY; app().innerHTML = (TAB === 'food' ? scrFood() : TAB === 'calendar' ? scrCalendar() : TAB === 'progress' ? scrProgress() : scrProfile()) + nav(); bind(); window.scrollTo(0, y);
-  if (TAB === 'profile') bindProfileForm(); if (TAB === 'calendar') bindCalendar(); if (TAB === 'progress' && BPKEY) bpRenderRow(); }
+  if (TAB === 'profile') bindProfileForm(); if (TAB === 'calendar') bindCalendar(); if (TAB === 'progress' && BPKEY) bpRenderRow(); warnApply(); }
 function nav() { const b = (t, n, i) => `<button data-tab="${t}" class="${TAB === t ? 'on' : ''}">${ic(i)}${n}</button>`;
   return `<nav class="nav nav5">${b('food', 'Питание', 'pitanie')}<button data-tab="calendar" class="${TAB === 'calendar' ? 'on' : ''}"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="8.5" cy="14.5" r=".9" fill="currentColor"/><circle cx="12" cy="14.5" r=".9" fill="currentColor"/></svg></span>Календарь</button><button class="plus" id="plus" aria-label="Добавить">+</button>${b('progress', 'Прогресс', 'grafiki')}${b('profile', 'Профиль', 'profil')}</nav>`; }
 function bind() { const wnf = $('#wnf'); if (wnf) wnf.onsubmit = async e => { e.preventDefault(); const v = num(new FormData(wnf).get('wml')); if (v != null && (v < 500 || v > 6000)) return toast('Норма воды — от 500 до 6000 мл'); S.profile.waterMl = v || null; await save(); render(); toast('Норма воды сохранена'); }; const aws = $('#awSound'); if (aws) aws.onchange = async () => { S.awardSound = aws.checked; await save(); }; app().querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { TAB = b.dataset.tab; window.scrollTo(0, 0); render(); });
@@ -528,7 +528,7 @@ function txList(items) { const box = $('#txr'); if (!box) return;
 
 /* ---------- обмен с ботом-нутрициологом через закрытый репозиторий: text_inbox/<id>.json → text_outbox/<id>.json ---------- */
 let TX_FLASH = new Set(), TX_BUSY = false, TX_T = null;
-async function txPoll() { const tok = S?.sync?.token; if (!tok || TX_BUSY || !KEY) return; TX_BUSY = true; let ch = false;
+async function txPoll() { warnApply();  const tok = S?.sync?.token; if (!tok || TX_BUSY || !KEY) return; TX_BUSY = true; let ch = false;
   try {
     for (const q of S.txReq || []) { if (q.sent) continue; await ghPut(tok, `text_inbox/${q.id}.json`, {id: q.id, date: q.date, meal: q.meal, text: q.text}, 'text ' + q.id); q.sent = 1; ch = true; }
     for (const q of [...(S.txReq || [])]) { if (!q.sent) continue; const r = await ghGetJson(tok, `text_outbox/${q.id}.json`); if (!r) continue;
@@ -543,6 +543,17 @@ async function txPoll() { const tok = S?.sync?.token; if (!tok || TX_BUSY || !KE
   TX_BUSY = false; if (ch) { await save(); if (!$('#ov') || TX_FLASH.size) { const m = $('#ov') && document.querySelector('#ov .sheet[data-mealsheet]'); if (m) { render(); mealSheet(m.dataset.mealsheet); } else if (!$('#ov')) render(); } setTimeout(() => TX_FLASH.clear(), 2500); } }
 function txLoop() { clearInterval(TX_T); txPoll(); TX_T = setInterval(() => { if (document.visibilityState === 'visible') txPoll(); }, 60000); }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') txPoll(); });
+
+/* ---------- режим «Перебор»: съедено сегодня > 105 % нормы (с бонусом активности, если включён); сутки по Москве ---------- */
+const mskKey = () => { const d = new Date(Date.now() + 3 * 3600e3); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`; };
+function warnOver() { if (!S?.profile || !S.plan) return 0; const k = mskKey(), n = dayNorm(k); if (!n || !n.kcal) return 0; const e = sumItems(dayItems(k)).kcal; return e > n.kcal * 1.05 ? r0(e - n.kcal) : 0; }
+function warnApply() { const over = warnOver(), b = document.body; b.classList.toggle('warn', !!over); const tc = document.querySelector('meta[name=theme-color]'); if (tc) tc.content = over ? '#FBEDEA' : '#F6F1E7';
+  document.querySelectorAll('.warnbar,.warntip').forEach(x => x.remove()); if (!over) return; const hd = app().querySelector('.hd'); if (!hd) return;
+  const w = document.createElement('div'); w.className = 'warnbar'; w.textContent = `Перебор +${fmtN(over)} ккал`;
+  const kg = [...(S.measures || [])].reverse().find(m => m.weight)?.weight || S.profile.weight, walk = r0((kg ? 3.5 * kg * .5 : 120) / 10) * 10;
+  const tips = [`Прогулка 30 минут сожжёт ≈ ${fmtN(walk)} ккал`, 'Завтра новый день, норма уже ждёт'];
+  const t = document.createElement('div'); t.className = 'warntip'; t.textContent = tips[Math.floor(Date.now() / 600e3) % tips.length]; hd.after(w, t); }
+setInterval(() => { if (KEY && S?.profile && document.body.classList.contains('warn') !== !!warnOver()) warnApply(); }, 30000);
 const VEND = 'vendor/';
 function loadScript(src) { return new Promise((ok, no) => { if (document.querySelector(`script[src="${src}"]`)) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error('нет ' + src)); document.head.appendChild(s); }); }
 async function scanBarcode(file) { const fm = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
