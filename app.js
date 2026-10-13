@@ -256,7 +256,7 @@ function tips() { const k = dkey(), now = new Date(), h = now.getHours(), out = 
   return out; }
 
 /* ---------- каркас ---------- */
-async function start() { await hashImport(); if (!S.profile) return onboarding(); await maintenance(); await checkBadges(); render(); if (S.sync?.token) { try { await importInbox(S.sync.token); } catch (e) {} } syncNow(); }
+async function start() { await hashImport(); if (!S.profile) return onboarding(); await maintenance(); await checkBadges(); render(); if (S.sync?.token) { try { await importInbox(S.sync.token); } catch (e) {} } syncNow(); txLoop(); }
 function render() { if (S?.profile && S.plan && S.profile.age0 != null && S.profile.planAge !== pAge(S.profile)) { recalcPlan(); save(); }
   const y = window.scrollY; app().innerHTML = (TAB === 'food' ? scrFood() : TAB === 'calendar' ? scrCalendar() : TAB === 'progress' ? scrProgress() : scrProfile()) + nav(); bind(); window.scrollTo(0, y);
   if (TAB === 'profile') bindProfileForm(); if (TAB === 'calendar') bindCalendar(); if (TAB === 'progress' && BPKEY) bpRenderRow(); }
@@ -400,10 +400,10 @@ function scrFood() { const k = DAY, {lim, eaten, norm} = mealLimitsFor(k), t = s
     return `<div class="card row" style="padding:12px 14px;cursor:pointer" data-act="meal" data-m="${m}"><div class="ib">${ic(icn)}</div><div class="sp"><div style="display:flex;justify-content:space-between"><b style="font-size:15px">${tn}</b><b style="font-size:14px;color:${e.kcal ? COL[c] : 'var(--mut)'}">${r0(e.kcal)} / ${r0(l.kcal)}</b></div>
     <div class="mut" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${items.length ? esc(items.map(x => x.name).join(', ')) : 'Пока пусто · нажмите, чтобы добавить'}</div><div class="bar" style="margin-top:6px;height:5px"><i style="width:${Math.min(100, l.kcal ? e.kcal / l.kcal * 100 : 0)}%;background:${COL[c]}"></i></div></div></div>`; }).join('')}
   ${waterRow(k)}${actCard(k, a)}</div>`; }
-function mealSheet(m) { const items = dayItems(DAY).filter(x => x.meal === m), {lim} = mealLimitsFor(DAY), t = sumItems(items);
+function mealSheet(m) { setTimeout(() => { const h = document.querySelector('#ov .sheet'); if (h) h.dataset.mealsheet = m; });  const items = dayItems(DAY).filter(x => x.meal === m), {lim} = mealLimitsFor(DAY), t = sumItems(items);
   sheet(`<div class="hd"><div><div class="mut">${fmtD(parseD(DAY))}</div><div class="h1" style="font-size:21px">${MNAME[m]}</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
   <div class="card"><div class="mut" style="margin-bottom:6px">${r0(t.kcal)} из ${r0(lim[m].kcal)} ккал · Б ${r0(t.p)} · Ж ${r0(t.f)} · У ${r0(t.c)}</div>
-  ${items.length ? items.map(x => `<div class="li"><div class="sp"><b style="font-size:14px">${esc(x.name)}</b><div class="mut">${x.g ? r0(x.g) + ' г · ' : ''}Б ${r1(x.p)} · Ж ${r1(x.f)} · У ${r1(x.c)}${x.est ? ' · ≈ оценка' : ''}${x.photo ? ' · есть фото' : ''}</div></div><b>${r0(x.kcal)}</b><button class="x" style="font-size:20px" data-act="delItem" data-id="${x.id}" data-m="${m}" aria-label="Удалить">×</button></div>`).join('') : '<div class="empty">В этом приёме пока ничего нет</div>'}</div>
+  ${items.length ? items.map(x => `<div class="li${TX_FLASH.has(x.id) ? ' txflash' : ''}"><div class="sp"><b style="font-size:14px">${esc(x.name)}</b>${x.pend ? ` <span class="txpend"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>уточняется</span>` : x.refined ? ' <span class="txok">уточнено</span>' : ''}<div class="mut">${x.g ? r0(x.g) + ' г · ' : ''}Б ${r1(x.p)} · Ж ${r1(x.f)} · У ${r1(x.c)}${x.est ? ' · ≈ оценка' : ''}${x.photo ? ' · есть фото' : ''}</div></div><b>${r0(x.kcal)}</b><button class="x" style="font-size:20px" data-act="delItem" data-id="${x.id}" data-m="${m}" aria-label="Удалить">×</button></div>`).join('') : '<div class="empty">В этом приёме пока ничего нет</div>'}</div>
   <div style="padding:0 16px"><button class="btn" data-act="addTo" data-m="${m}">Добавить в «${MNAME[m]}»</button></div>`); }
 let CUR_MEAL = 'breakfast';
 function addSheet(m) { CUR_MEAL = m; const rc = recent(); sheet(`<div class="hd"><div><div class="mut">${fmtD(parseD(DAY))}</div><div class="h1" style="font-size:21px">Добавить</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
@@ -427,7 +427,7 @@ async function loadFoods() { if (FOODS) return FOODS; try { const r = await fetc
 function searchSheet() { sheet(`<div class="hd"><div class="h1" style="font-size:21px">Поиск продукта</div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
   <div style="padding:0 16px"><label class="fld"><input id="q" placeholder="Например, творог 5%" autocomplete="off"></label></div><div class="card" id="qr"><div class="empty">Загрузка базы…</div></div><p class="mut" style="padding:0 20px">Источники: Open Food Facts (лицензия ODbL), USDA FoodData Central.</p>`);
   const q = $('#q'); setTimeout(() => q.focus(), 50);
-  loadFoods().then(F => { const draw = () => { if (!$('#qr')) return; const s = q.value.trim().toLowerCase().replace(/ё/g, 'е'); const mine = S.customFoods.map(x => ({...x, n: x.name.toLowerCase().replace(/ё/g, 'е'), mine: 1}));
+  loadFoods().then(F => { const draw = () => { if (!$('#qr')) return; const s = q.value.trim().toLowerCase().replace(/ё/g, 'е'); const mine = S.customFoods.concat(S.personalDb || []).map(x => ({...x, n: x.name.toLowerCase().replace(/ё/g, 'е'), mine: 1}));
       if (!F.length && !mine.length) { $('#qr').innerHTML = '<div class="empty">База продуктов ещё подключается. Пока добавьте блюдо вручную — оно сохранится в «Мои продукты» и будет находиться поиском.</div>'; return; }
       if (s.length < 2) { $('#qr').innerHTML = `<div class="empty">Введите хотя бы 2 буквы. В базе ${(F.length + mine.length).toLocaleString('ru-RU')} продуктов.</div>`; return; }
       const words = s.split(/\s+/); RES = mine.concat(F).filter(x => words.every(w => x.n.includes(w))).slice(0, 40);
@@ -475,7 +475,7 @@ function txQty(raw) { let s = raw.replace(/^~/, '').toLowerCase().replace(',', '
 function txFind(name, F, R, RS, noR) { const rest = RS.find(r => r.name && (' ' + name + ' ').includes(' ' + txN(r.name).split(' ')[0] + ' ')); if (rest) name = (' ' + name + ' ').replace(' ' + txN(rest.name).split(' ')[0] + ' ', ' ').trim();
   const words = name.split(' ').filter(w => w.length > 1).map(txStem); if (!words.length) return null;
   const score = n => { const t = ' ' + n; let hit = 0; for (const w of words) if (t.includes(' ' + w)) hit++; return hit / words.length - Math.min(n.length, 60) / 600 + (n === name ? .2 : n.startsWith(name) ? .1 : 0); };
-  const pools = [[S.customFoods.map(x => ({...x, src: 'my', n: txN(x.name)})), 'личная база', .55], [rest ? R.filter(x => x.rest === rest.name) : words.length >= 2 && !noR ? R : [], 'меню ресторана', .85], [F.map(x => ({...x, src: 'db', n: txN(x.name)})), 'база продуктов', .55]];
+  const pools = [[S.customFoods.concat(S.personalDb || []).map(x => ({...x, src: 'my', n: txN(x.name)})), 'личная база', .55], [rest ? R.filter(x => x.rest === rest.name) : words.length >= 2 && !noR ? R : [], 'меню ресторана', .85], [F.map(x => ({...x, src: 'db', n: txN(x.name)})), 'база продуктов', .55]];
   for (const [pool, label, min] of pools) { let best = null, bs = 0; for (const x of pool) { const sc = score(x.n); if (sc > bs) { bs = sc; best = x; } }
     if (best && bs >= min) return {x: best, label: x => x, conf: bs >= .9 ? 1 : .6, lab: label + (best.rest ? ' · ' + best.rest : '')}; }
   return null; }
@@ -520,9 +520,29 @@ function txList(items) { const box = $('#txr'); if (!box) return;
       row.addEventListener('touchmove', e => { if (x0 == null) return; dx = Math.min(0, e.touches[0].clientX - x0); inner.style.transform = `translateX(${dx}px)`; }, {passive: true});
       row.addEventListener('touchend', () => { if (x0 == null) return; x0 = null; if (dx < -90) { items.splice(i, 1); draw(); } else inner.style.transform = ''; }); });
     const sv = $('#txSave'); if (sv) sv.onclick = async () => { const day = (S.meals[DAY] = S.meals[DAY] || []);
-      for (const x of ok) day.push({id: uid(), meal: CUR_MEAL, t: Date.now(), name: x.name, g: x.grams, kcal: x.kcal, p: x.p, f: x.f, c: x.c, src: 'text', est: x.confidence < .7});
-      TX_LAST = ''; await save(); closeSheet(); render(); toast(`Записано: ${ok.length} ${plural(ok.length, 'позиция', 'позиции', 'позиций')}`); await checkBadges(); }; };
+      const rq = 't' + Date.now().toString(36) + uid().slice(0, 6), bot = !!S.sync?.token;
+      for (const x of ok) day.push({id: uid(), meal: CUR_MEAL, t: Date.now(), name: x.name, g: x.grams, kcal: x.kcal, p: x.p, f: x.f, c: x.c, src: 'text', est: x.confidence < .7, ...(bot ? {rq, pend: 1} : {})});
+      if (bot) { (S.txReq = S.txReq || []).push({id: rq, date: DAY, meal: CUR_MEAL, text: TX_LAST, sent: 0}); }
+      TX_LAST = ''; await save(); if (bot) txPoll(); closeSheet(); render(); toast(`Записано: ${ok.length} ${plural(ok.length, 'позиция', 'позиции', 'позиций')}`); await checkBadges(); }; };
   draw(); }
+
+/* ---------- обмен с ботом-нутрициологом через закрытый репозиторий: text_inbox/<id>.json → text_outbox/<id>.json ---------- */
+let TX_FLASH = new Set(), TX_BUSY = false, TX_T = null;
+async function txPoll() { const tok = S?.sync?.token; if (!tok || TX_BUSY || !KEY) return; TX_BUSY = true; let ch = false;
+  try {
+    for (const q of S.txReq || []) { if (q.sent) continue; await ghPut(tok, `text_inbox/${q.id}.json`, {id: q.id, date: q.date, meal: q.meal, text: q.text}, 'text ' + q.id); q.sent = 1; ch = true; }
+    for (const q of [...(S.txReq || [])]) { if (!q.sent) continue; const r = await ghGetJson(tok, `text_outbox/${q.id}.json`); if (!r) continue;
+      const arr = Array.isArray(r.json) ? r.json : r.json.items || []; const day = S.meals[q.date] = S.meals[q.date] || [];
+      const old = day.filter(x => x.rq === q.id), t0 = old[0]?.t || Date.now(), meal = old[0]?.meal || q.meal;
+      S.meals[q.date] = day.filter(x => x.rq !== q.id).concat(arr.filter(x => x && x.name && num(x.kcal) != null).map(x => { const id = uid(); TX_FLASH.add(id);
+        return {id, meal, t: t0, name: String(x.name).slice(0, 80), g: num(x.grams) || null, kcal: num(x.kcal) || 0, p: num(x.p) || 0, f: num(x.f) || 0, c: num(x.c) || 0, src: 'text', rq: q.id, refined: 1, est: num(x.confidence) != null && num(x.confidence) < .7, bsrc: x.source ? String(x.source).slice(0, 40) : undefined}; }));
+      S.txReq = S.txReq.filter(x => x.id !== q.id); await ghDel(tok, r.path || `text_outbox/${q.id}.json`, r.sha); ch = true; }
+    const pd = await ghGetJson(tok, 'personal_db.json'); if (pd && Array.isArray(pd.json)) { const v = pd.json.filter(x => x && x.name && num(x.kcal) != null).map(x => ({id: x.id || 'pdb:' + x.name, name: String(x.name), per: x.per === 'portion' ? 'portion' : '100g', g: num(x.g) || null, kcal: num(x.kcal), p: num(x.p) || 0, f: num(x.f) || 0, c: num(x.c) || 0, bot: 1}));
+      if (JSON.stringify(v) !== JSON.stringify(S.personalDb || [])) { S.personalDb = v; ch = true; } }
+  } catch (e) { console.warn('txPoll', e); }
+  TX_BUSY = false; if (ch) { await save(); if (!$('#ov') || TX_FLASH.size) { const m = $('#ov') && document.querySelector('#ov .sheet[data-mealsheet]'); if (m) { render(); mealSheet(m.dataset.mealsheet); } else if (!$('#ov')) render(); } setTimeout(() => TX_FLASH.clear(), 2500); } }
+function txLoop() { clearInterval(TX_T); txPoll(); TX_T = setInterval(() => { if (document.visibilityState === 'visible') txPoll(); }, 60000); }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') txPoll(); });
 const VEND = 'vendor/';
 function loadScript(src) { return new Promise((ok, no) => { if (document.querySelector(`script[src="${src}"]`)) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error('нет ' + src)); document.head.appendChild(s); }); }
 async function scanBarcode(file) { const fm = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
