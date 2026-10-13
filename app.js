@@ -408,7 +408,7 @@ function mealSheet(m) { const items = dayItems(DAY).filter(x => x.meal === m), {
 let CUR_MEAL = 'breakfast';
 function addSheet(m) { CUR_MEAL = m; const rc = recent(); sheet(`<div class="hd"><div><div class="mut">${fmtD(parseD(DAY))}</div><div class="h1" style="font-size:21px">Добавить</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
   <div class="seg" style="margin:0 16px 14px" id="mealSeg">${MEALS.map(([v, t]) => `<button data-v="${v}" class="${v === m ? 'on' : ''}">${v === 'snacks' ? 'Перекус' : t}</button>`).join('')}</div>
-  <div class="tiles"><button class="tile" data-act="addPhoto"><span class="tic">${ic('foto')}</span><span class="ttx"><b>Фото</b><span class="mut">Сохранить фото блюда</span></span></button><button class="tile" data-act="addSearch"><span class="tic">${ic('poisk')}</span><span class="ttx"><b>Поиск</b><span class="mut">База продуктов</span></span></button>
+  <div class="tiles"><button class="tile" data-act="addPhoto"><span class="tic">${ic('foto')}</span><span class="ttx"><b>Фото</b><span class="mut">Блюдо, этикетка или текстом</span></span></button><button class="tile" data-act="addSearch"><span class="tic">${ic('poisk')}</span><span class="ttx"><b>Поиск</b><span class="mut">База продуктов</span></span></button>
   <button class="tile" data-act="addRest"><span class="tic">${ic('restoran')}</span><span class="ttx"><b>Ресторан</b><span class="mut">Блюда из меню</span></span></button><button class="tile" data-act="addManual"><span class="tic">${ic('dobavit')}</span><span class="ttx"><b>Вручную</b><span class="mut">Своё блюдо и КБЖУ</span></span></button></div>
   ${rc.length ? `<div class="card" style="margin-top:14px"><h3>Недавнее</h3>${rc.slice(0, 4).map((x, i) => `<div class="li" style="cursor:pointer" data-act="quickRecent" data-i="${i}"><div class="sp"><b style="font-size:14px">${esc(x.name)}</b><div class="mut">${x.g ? r0(x.g) + ' г · ' : ''}${r0(x.kcal)} ккал</div></div><span class="pill">+</span></div>`).join('')}</div>` : ''}`);
   document.querySelectorAll('#mealSeg button').forEach(b => b.onclick = () => { document.querySelectorAll('#mealSeg button').forEach(x => x.classList.remove('on')); b.classList.add('on'); CUR_MEAL = b.dataset.v; }); }
@@ -451,12 +451,78 @@ async function shrink(file, max = 1280) { const bmp = await createImageBitmap(fi
 let PH_MODE = 'dish';
 function photoDish(f) { (async () => { try { const bytes = await shrink(f); const id = uid(); await idb.set('dish:' + id, await seal(KEY, bytes)); manualSheet(id); } catch (e) { toast('Не удалось сохранить фото'); } })(); }
 function photoAdd() { sheet(`<div class="hd"><div><div class="mut">${MNAME[CUR_MEAL]}</div><div class="h1" style="font-size:21px">Фото</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
-  <div style="padding:0 16px"><div class="seg phseg" id="phSeg"><button data-m="dish" class="${PH_MODE === 'dish' ? 'on' : ''}">Блюдо</button><button data-m="label" class="${PH_MODE === 'label' ? 'on' : ''}">Этикетка</button></div>
+  <div style="padding:0 16px"><div class="seg phseg" id="phSeg"><button data-m="dish" class="${PH_MODE === 'dish' ? 'on' : ''}">Фото</button><button data-m="label" class="${PH_MODE === 'label' ? 'on' : ''}">Этикетка</button><button data-m="text">Текстом</button></div>
   <div class="vf" id="vf"><i class="c1"></i><i class="c2"></i><i class="c3"></i><i class="c4"></i><img id="vfi" alt="" hidden><div class="vfh" id="vfh">${PH_MODE === 'label' ? 'Наведите на штрихкод или таблицу КБЖУ' : 'Сфотографируйте блюдо целиком'}</div></div>
   <button class="btn" id="phShot" style="margin-top:12px">Сделать фото</button><button class="btn sec" id="phPick" style="margin-top:8px">Выбрать из галереи</button>
   <p class="mut" style="margin:10px 4px 0;text-align:center">${PH_MODE === 'label' ? 'Фото обрабатывается на телефоне и никуда не отправляется. В интернет уходит только номер штрихкода.' : 'Фото хранится зашифрованным в вашем дневнике.'}</p></div>`);
-  document.querySelectorAll('#phSeg [data-m]').forEach(b => b.onclick = () => { PH_MODE = b.dataset.m; photoAdd(); });
+  document.querySelectorAll('#phSeg [data-m]').forEach(b => b.onclick = () => { if (b.dataset.m === 'text') return textAdd(); PH_MODE = b.dataset.m; photoAdd(); });
   const go = cap => pickImage(f => PH_MODE === 'label' ? labelProcess(f) : photoDish(f), cap); $('#phShot').onclick = () => go(true); $('#phPick').onclick = () => go(false); $('#vf').onclick = () => go(true); }
+
+/* ---------- ввод текстом: разбор на телефоне (личная база → меню ресторанов → база продуктов) ---------- */
+const TX_NUM = {'один': 1, 'одна': 1, 'одно': 1, 'два': 2, 'две': 2, 'три': 3, 'четыре': 4, 'пять': 5, 'пол': .5, 'половина': .5, 'полтора': 1.5, 'пара': 2};
+const TX_DEF = [[/яйц|яичн/, 55, 'яйцо куриное'], [/тост/, 30, 'хлеб тостовый'], [/масл/, 5, 'масло сливочное'], [/хлеб|батон/, 30, 'хлеб'], [/капучин|латте|флэт|раф/, 250, null], [/кофе|американо|эспрессо/, 200, null], [/чай/, 250, null], [/банан/, 120, null], [/яблок/, 180, null], [/сыр/, 20, null], [/творог/, 150, null], [/йогурт/, 125, null], [/каш|овсян/, 200, null], [/суп|борщ/, 300, null], [/салат/, 150, null], [/молок/, 200, null], [/сок/, 200, null], [/круассан/, 60, null], [/тартин/, 50, null]];
+const txN = s => s.toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9% ]/g, ' ').replace(/\s+/g, ' ').trim();
+const txStem = w => w.length <= 4 ? w : w.slice(0, Math.max(4, w.length - 2));
+function txSplit(t) { const out = [];
+  for (let part of t.split(/[,;\n+]|\sи\s/i)) { part = part.trim(); if (!part) continue;
+    const sub = part.split(/\s(?:с|со)\s/i); const head = sub[0]; out.push(head); for (const x of sub.slice(1)) out.push('~' + x); }
+  return out; }
+function txQty(raw) { let s = raw.replace(/^~/, '').toLowerCase().replace(',', '.'), q = null, unit = null;
+  const m = s.match(/(\d+(?:\.\d+)?)\s*(кг|г|гр|грамм\S*|мл|л|шт\S*|ломт\S*|кусо?к\S*|порц\S*|стак\S*|ложк\S*)?/);
+  if (m) { q = +m[1]; unit = (m[2] || '').replace(/^(грамм|гр).*/, 'г').replace(/^шт.*|^ломт.*|^кус.*/, 'шт').replace(/^порц.*/, 'порц').replace(/^стак.*/, 'стак').replace(/^ложк.*/, 'ложк'); s = s.replace(m[0], ' '); }
+  else { const w = s.split(/\s+/).find(x => TX_NUM[x] != null); if (w) { q = TX_NUM[w]; unit = 'шт'; s = s.replace(new RegExp('(^|\\s)' + w + '(\\s|$)'), ' '); } }
+  return {name: txN(s), q, unit, side: raw.startsWith('~')}; }
+function txFind(name, F, R, RS, noR) { const rest = RS.find(r => r.name && (' ' + name + ' ').includes(' ' + txN(r.name).split(' ')[0] + ' ')); if (rest) name = (' ' + name + ' ').replace(' ' + txN(rest.name).split(' ')[0] + ' ', ' ').trim();
+  const words = name.split(' ').filter(w => w.length > 1).map(txStem); if (!words.length) return null;
+  const score = n => { const t = ' ' + n; let hit = 0; for (const w of words) if (t.includes(' ' + w)) hit++; return hit / words.length - Math.min(n.length, 60) / 600 + (n === name ? .2 : n.startsWith(name) ? .1 : 0); };
+  const pools = [[S.customFoods.map(x => ({...x, src: 'my', n: txN(x.name)})), 'личная база', .55], [rest ? R.filter(x => x.rest === rest.name) : words.length >= 2 && !noR ? R : [], 'меню ресторана', .85], [F.map(x => ({...x, src: 'db', n: txN(x.name)})), 'база продуктов', .55]];
+  for (const [pool, label, min] of pools) { let best = null, bs = 0; for (const x of pool) { const sc = score(x.n); if (sc > bs) { bs = sc; best = x; } }
+    if (best && bs >= min) return {x: best, label: x => x, conf: bs >= .9 ? 1 : .6, lab: label + (best.rest ? ' · ' + best.rest : '')}; }
+  return null; }
+async function txParse(text) { const F = await loadFoods(), RS = await loadRest();
+  const R = RS.flatMap(r => (r.dishes || []).map(d => ({...d, name: d.name, rest: r.name, src: 'restaurant', n: txN(d.name), ...(d.pk != null ? {per: 'portion', kcal: d.pk, p: d.pp, f: d.pf, c: d.pc} : d.per === 'portion' ? {per: 'portion'} : {})})));
+  const out = [];
+  for (const raw of txSplit(text)) { const {name, q, unit, side} = txQty(raw); if (!name) continue;
+    const def = TX_DEF.find(([re]) => re.test(name)); let hit = (def && def[2] && name.split(' ').length === 1 && txFind(def[2], F, R, RS, 1)) || txFind(name, F, R, RS);
+    if (!hit) { out.push({name: raw.replace(/^~/, '').trim(), grams: q && unit === 'г' ? q : def ? def[1] : 100, kcal: null, p: null, f: null, c: null, source: 'не найдено', confidence: 0}); continue; }
+    const x = hit.x; let conf = hit.conf, g;
+    if (unit === 'г' || unit === 'мл') g = q; else if (unit === 'кг' || unit === 'л') g = q * 1000;
+    else { const each = x.per === 'portion' && x.g ? x.g : def ? def[1] : x.g || 100; g = (q || 1) * each; if (!def && !x.g) conf = Math.min(conf, .5); }
+    const per = x.per === 'portion' ? (x.g || g) : 100, k = g / per;
+    const nm = x.name;
+    out.push({name: nm, grams: r0(g), kcal: r0(x.kcal * k), p: r1((x.p || 0) * k), f: r1((x.f || 0) * k), c: r1((x.c || 0) * k), source: hit.lab, confidence: (x.est ? Math.min(conf, .6) : conf), base: {per, kcal: x.kcal, p: x.p || 0, f: x.f || 0, c: x.c || 0}, src: x.src}); }
+  return out; }
+let TX_LAST = '';
+function textAdd() { sheet(`<div class="hd"><div><div class="mut">${MNAME[CUR_MEAL]}</div><div class="h1" style="font-size:21px">Текстом</div></div><button class="x" data-close aria-label="Закрыть">${XSVG}</button></div>
+  <div style="padding:0 16px"><div class="seg phseg" id="phSeg"><button data-m="dish">Фото</button><button data-m="label">Этикетка</button><button data-m="text" class="on">Текстом</button></div>
+  <div class="txbox"><textarea id="txq" rows="3" placeholder="2 яйца, тост с маслом, капучино 300 мл">${esc(TX_LAST)}</textarea>
+  <div class="txbtns"><button class="txmic" id="txMic" type="button" aria-label="Диктовка" title="Диктовка с клавиатуры"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button><button class="txsend" id="txGo" type="button" aria-label="Разобрать"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></div></div>
+  <p class="mut" style="margin:8px 4px 0">Перечислите через запятую, можно с весом: «150 г творога». Текст разбирается на телефоне и никуда не отправляется.</p>
+  <div id="txr"></div></div>`);
+  document.querySelectorAll('#phSeg [data-m]').forEach(b => b.onclick = () => { if (b.dataset.m === 'text') return; PH_MODE = b.dataset.m; photoAdd(); });
+  const ta = $('#txq'); setTimeout(() => ta.focus(), 60); $('#txMic').onclick = () => { ta.focus(); toast('Нажмите 🎤 на клавиатуре и продиктуйте'); };
+  const go = async () => { const t = ta.value.trim(); if (!t) return toast('Напишите, что съели'); TX_LAST = t;
+    $('#txr').innerHTML = '<div class="card" style="margin:14px 0 0">' + '<div class="txsk"><i></i><i></i></div>'.repeat(3) + '</div>';
+    const [items] = await Promise.all([txParse(t), new Promise(r => setTimeout(r, 350))]); txList(items); };
+  $('#txGo').onclick = go; ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } }; }
+function txList(items) { const box = $('#txr'); if (!box) return;
+  const rec = x => { if (!x.base) return; const k = x.grams / x.base.per; x.kcal = r0(x.base.kcal * k); x.p = r1(x.base.p * k); x.f = r1(x.base.f * k); x.c = r1(x.base.c * k); };
+  const draw = () => { const ok = items.filter(x => x.kcal != null), T = ok.reduce((a, x) => ({k: a.k + x.kcal, p: a.p + x.p, f: a.f + x.f, c: a.c + x.c}), {k: 0, p: 0, f: 0, c: 0});
+    box.innerHTML = !items.length ? '<div class="empty">Не нашёл продуктов в тексте</div>' : `<div class="card" style="margin:14px 0 0;padding:4px 14px">${items.map((x, i) => `<div class="txrow" data-i="${i}"><div class="txin"><div class="sp"><b style="font-size:14px">${esc(x.name)}</b>${x.confidence < .7 ? ' <span class="txest">оценка</span>' : ''}
+      <div class="txm">${x.kcal == null ? 'нет в базах — добавьте вручную' : `${r0(x.kcal)} ккал · Б ${r1(x.p)} · Ж ${r1(x.f)} · У ${r1(x.c)}`}<br><span style="opacity:.75">${esc(x.source)}</span></div></div>
+      ${x.kcal != null ? `<div class="txg"><button type="button" data-d="-10">−</button><input inputmode="decimal" value="${r0(x.grams)}" data-g="${i}"><span>г</span><button type="button" data-d="10">+</button></div>` : ''}</div></div>`).join('')}</div>
+      <div class="row" style="justify-content:space-between;margin:12px 4px"><span class="mut">Итого в «${MNAME[CUR_MEAL]}»</span><b>${r0(T.k)} ккал · Б ${r0(T.p)} · Ж ${r0(T.f)} · У ${r0(T.c)}</b></div>
+      <button class="btn txsave" id="txSave"${ok.length ? '' : ' disabled'}>Записать</button><p class="mut" style="text-align:center;margin-top:8px">Смахните строку влево, чтобы удалить</p>`;
+    box.querySelectorAll('.txrow').forEach(row => { const i = +row.dataset.i, x = items[i], inner = row.querySelector('.txin');
+      row.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { x.grams = Math.max(1, r0(x.grams + +b.dataset.d)); rec(x); draw(); });
+      const inp = row.querySelector('[data-g]'); if (inp) inp.onchange = () => { const v = num(inp.value); if (v > 0) { x.grams = v; rec(x); } draw(); };
+      let x0 = null, dx = 0; row.addEventListener('touchstart', e => { if (e.target.closest('input,button')) return; x0 = e.touches[0].clientX; dx = 0; }, {passive: true});
+      row.addEventListener('touchmove', e => { if (x0 == null) return; dx = Math.min(0, e.touches[0].clientX - x0); inner.style.transform = `translateX(${dx}px)`; }, {passive: true});
+      row.addEventListener('touchend', () => { if (x0 == null) return; x0 = null; if (dx < -90) { items.splice(i, 1); draw(); } else inner.style.transform = ''; }); });
+    const sv = $('#txSave'); if (sv) sv.onclick = async () => { const day = (S.meals[DAY] = S.meals[DAY] || []);
+      for (const x of ok) day.push({id: uid(), meal: CUR_MEAL, t: Date.now(), name: x.name, g: x.grams, kcal: x.kcal, p: x.p, f: x.f, c: x.c, src: 'text', est: x.confidence < .7});
+      TX_LAST = ''; await save(); closeSheet(); render(); toast(`Записано: ${ok.length} ${plural(ok.length, 'позиция', 'позиции', 'позиций')}`); await checkBadges(); }; };
+  draw(); }
 const VEND = 'vendor/';
 function loadScript(src) { return new Promise((ok, no) => { if (document.querySelector(`script[src="${src}"]`)) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error('нет ' + src)); document.head.appendChild(s); }); }
 async function scanBarcode(file) { const fm = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
