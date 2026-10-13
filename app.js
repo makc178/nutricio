@@ -713,7 +713,7 @@ const BAL = {
 let BAL_EV = null, BAL_I = 0, JOKE_I = null;
 function balEv(t) { BAL_EV = {t, at: Date.now()}; BAL_I = 0; }
 function balList(s) { return Array.isArray(BAL[s]) ? BAL[s] : []; }
-function balFacts() { return (BAL._extras?.examples || []).filter(x => /^Факт дня/.test(x)); }
+function balFacts() { return (BAL._extras?.examples || []).filter(x => /^Факт дня/.test(x)).concat(BAL._extras?.facts || []); }
 function balJokes() { return (BAL._extras?.examples || []).filter(x => /^Анекдот/.test(x)).concat(BAL._extras?.jokes || []); }
 function balDayN() { return Math.floor(Date.now() / 864e5); }
 function balSit(k) { const today = k === dkey(); if (!today) return null;
