@@ -158,5 +158,9 @@ input[type=date]::-webkit-date-and-time-value{text-align:left}
 .ccl{flex:1;min-width:0}.ccm{display:flex;align-items:center;gap:7px;padding:5px 0;font-size:13px}.ccm .mut{white-space:nowrap;font-size:12px}.ccok{font-size:10.5px;font-weight:700;color:var(--ok);margin:-3px 0 2px 16px}
 .cckb{height:6px;border-radius:3px;background:#ECE5D6;margin-top:6px;overflow:hidden}.cckb i{display:block;height:100%;border-radius:3px}
 @media (max-width:360px){.ccr{width:136px;height:136px}.ccr svg{width:136px;height:136px}.ccb{gap:8px}}
+.keys{grid-template-columns:repeat(3,80px);gap:16px 20px;touch-action:manipulation;user-select:none;-webkit-user-select:none}.keys button{width:80px;height:80px;background:#F6F1E7;border:1px solid #7A9A6E;box-shadow:none;font-family:Manrope,sans-serif;font-size:32px;font-weight:600;color:#2E2E2C;transition:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;padding:0}
+.keys button.hit{background:#7A9A6E;color:#fff}.keys button.e{border:0;background:none;font-size:24px}.keys button.e.hit{background:#7A9A6E33;color:#2E2E2C}.keys>span{width:80px}
+.pin .dots i,.sheet .dots i{width:14px!important;height:14px!important}.pin .dots i.f,.sheet .dots i.f{background:#C9A45C!important;border-color:#C9A45C!important}
+@media (max-height:600px){.keys{grid-template-columns:repeat(3,70px);gap:10px 18px}.keys button,.keys>span{width:70px;height:70px}.pin{padding-top:16px;padding-bottom:16px}.pin .dots{margin:14px 0 18px}}
 </style></head><body><div id="app"></div>
 <script src="calc.js"></script><script src="awards.js"></script><script src="manual.js"></script><script src="health.js"></script><script src="label.js"></script><script src="app.js"></script></body></html>
