@@ -7,6 +7,7 @@ const AWSVG = {"streak_7": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"
 const PIECES = {"_note":"Типовой вес 1 шт съедобной части, г. Сопоставлять по началу названия продукта без регистра.",
 "Мандарин":70,"Апельсин":180,"Яблоко":180,"Груша":170,"Банан":120,"Киви":75,"Персик":150,"Нектарин":140,"Абрикос":40,"Слива":30,"Грейпфрут":300,"Лимон":100,"Хурма":200,"Гранат":250,"Авокадо":150,"Помидор":120,"Помидор черри":15,"Огурец":110,"Перец болгарский":150,"Морковь":80,"Картофель":120,"Лук репчатый":80,"Чеснок, зубчик":5,"Кабачок":250,"Баклажан":250,"Свёкла":200,"Яйцо куриное":55,"Яйцо перепелиное":11,"Белок яичный":33,"Желток яичный":17,"Хлеб, ломтик":30,"Батон, ломтик":25,"Хлебец":10,"Тост":28,"Лаваш, лист":80,"Тортилья":60,"Круассан":60,"Булочка":60,"Блин":45,"Сырник":50,"Котлета":80,"Сосиска":50,"Сарделька":100,"Куриная грудка":200,"Куриное бедро":110,"Куриная ножка":180,"Пельмень":12,"Вареник":20,"Сыр, ломтик":20,"Творожный сырок":45,"Йогурт, стаканчик":125,"Кефир, стакан":250,"Молоко, стакан":250,"Финик":8,"Орех грецкий":5,"Миндаль":1.2,"Конфета шоколадная":12,"Печенье":10,"Зефир":35,"Шоколад, долька":5,"Мёд, ч.л.":8,"Сахар, ч.л.":5,"Масло сливочное, ч.л.":5,"Масло растительное, ст.л.":14,"Протеиновый батончик":50}
 ;
+const CFG = {"activity": {"k_sedentary": 1.2, "kcal_per_step_kg": 0.0005, "steps_baseline": 3000, "round": 10, "cap": 1000, "split_meals": {"dinner": 0.6, "snacks": 0.4}, "split_macros": {"carbs": 0.7, "fat": 0.3}, "exclude_workout_types": ["fishing"]}, "flags": {"activity.home_line": false, "activity.meal_badge": false, "activity.profile_toggle": false}}; const ACFG = CFG.activity; const FLAG = n => !!(CFG.flags && CFG.flags[n]);
 const pieceOf = food => { if (food.pieceG > 0) return {g: food.pieceG, u: 'шт'}; const n = String(food.name || '').toLowerCase(); let best = null;
   for (const [k, g] of Object.entries(PIECES)) if (k[0] !== '_' && typeof g === 'number') { const base = k.split(',')[0].trim().toLowerCase(); if (n.startsWith(base) && (!best || base.length > best.b)) best = {k, g, b: base.length}; }
   if (!best) return null; const m = best.k.toLowerCase().match(/ломтик|стакан|ч\.л\.|ст\.л\./); return {g: best.g, u: m ? m[0] : 'шт'}; };
@@ -155,7 +156,7 @@ let INBOX_BUSY = false;
 // основной путь: Быстрая команда кладёт JSON в inbox/ закрытого репозитория; забираем при каждом входе по PIN и при синхронизации
 async function importInbox(tok) { if (INBOX_BUSY) return 0; INBOX_BUSY = true; try { const files = (await ghList(tok, 'inbox')).filter(f => /\.json$/i.test(f.name)); if (!files.length) return 0;
     const got = []; for (const f of files) { try { const j = await ghGetJson(tok, f.path); if (j) got.push({name: f.name, path: f.path, sha: f.sha, json: j.json}); } catch (e) {} }
-    const n = importHealth({days: HL.mergeFiles(got)}); await save(true); for (const f of got) { try { await ghDel(tok, f.path, f.sha); } catch (e) {} }
+    const n = importHealth({days: HL.mergeFiles(got)}); if (n) S.healthSync = Date.now(); await save(true); for (const f of got) { try { await ghDel(tok, f.path, f.sha); } catch (e) {} }
     if (n) { toast(`Импортировано из «Здоровья»: ${n} ${plural(n, 'день', 'дня', 'дней')}`); if (KEY && !$('#ov')) render(); } return n; } finally { INBOX_BUSY = false; } }
 
 /* ---------- импорт активности (Быстрые команды / файл / inbox) ----------
@@ -180,21 +181,35 @@ function series() { return [...S.measures].sort((a, b) => a.d < b.d ? -1 : 1); }
 function lastWeight() { const m = series().filter(x => x.weight); return m.length ? m[m.length - 1].weight : S.profile?.weight; }
 function age(bd) { const b = new Date(bd), n = new Date(); let a = n.getFullYear() - b.getFullYear(); if (n < new Date(n.getFullYear(), b.getMonth(), b.getDate())) a--; return a; }
 function pAge(p) { if (p.age0 != null) { const a = new Date(p.ageAt), n = new Date(); let m = (n.getFullYear() - a.getFullYear()) * 12 + n.getMonth() - a.getMonth(); if (n.getDate() < a.getDate()) m--; return p.age0 + Math.floor(Math.max(0, m) / 12); } return pAge(p); }
-function recalcPlan(weight) { const p = S.profile; p.planAge = pAge(p); const prof = {sex: p.sex, age: pAge(p), height: p.height, weight: weight ?? lastWeight(), activity: p.activity, goal: p.goal, targetWeight: p.targetWeight};
+function planProf(p, weight) { return {sex: p.sex, age: pAge(p), height: p.height, weight: weight ?? lastWeight(), activity: p.activity, goal: p.goal, targetWeight: p.targetWeight}; }
+function recalcPlan(weight) { const p = S.profile; p.planAge = pAge(p); const prof = planProf(p, weight);
   S.plan = {...C.plan(prof), weightAt: prof.weight, at: dkey(), adj: S.plan?.adj || 0, lastAuto: S.plan?.lastAuto, manual: S.plan?.manual || null, suggest: S.plan?.suggest || null}; }
 function normBase() { const pl = S.plan; return pl.manual ? {kcal: pl.manual.kcal, p: pl.manual.p, f: pl.manual.f, c: pl.manual.c} : {kcal: pl.kcal + (pl.adj || 0), p: pl.p, f: pl.f, c: pl.c}; }
 // активные калории = шаги + тренировки, без базового обмена; к норме добавляется половина (переключатель в «Профиле»)
+// режим «Учитывать шаги» (формула Нутрициолога 16.10): норма = БОО × K сидячий + прибавка за активность; включается в «Профиле» (флаг activity.profile_toggle)
+const stepsMode = () => !!(FLAG('activity.profile_toggle') && S.profile && S.profile.useSteps === true && ACFG);
+function stepsBonus(k) { const a = S.activity[k]; if (!a) return {kcal: 0, source: null, raw: 0};
+  const ex = new Set(ACFG.exclude_workout_types || []), exK = (a.workouts || []).filter(w => ex.has(wType(w.type)[0])).reduce((s, w) => s + (w.kcal || 0), 0);
+  return C.activityBonus({activeKcal: a.activeKcal != null && a.activeKcal > 0 ? Math.max(0, a.activeKcal - exK) : null, steps: a.steps}, lastWeight() || S.profile?.weight, ACFG); }
+function stepsBase() { const pl = S.plan; if (pl.manual) return {kcal: pl.manual.kcal, p: pl.manual.p, f: pl.manual.f, c: pl.manual.c, fiber: pl.fiber};
+  const sp = C.plan({...planProf(S.profile, pl.weightAt), activity: ACFG.k_sedentary}), adj = pl.adj || 0;
+  return {kcal: sp.kcal + adj, p: sp.p, f: sp.f, c: Math.max(0, sp.c * (sp.kcal + adj) / sp.kcal), fiber: sp.fiber}; }
 function activeKcal(k) { const a = S.activity[k]; if (!a) return 0; const ws = a.workouts || [], fish = ws.filter(w => wType(w.type)[0] === 'fishing').reduce((s, w) => s + (w.kcal || 0), 0); // рыбалка в списке, но не в активных калориях
   const wk = ws.reduce((s, w) => s + (w.kcal || 0), 0) - fish;
   if (a.activeKcal != null) return Math.max(a.activeKcal - fish, wk, 0); return Math.round((a.steps || 0) * 0.0005 * (lastWeight() || S.profile?.weight || 70)) + wk; }
-function actBonus(k) { return S.profile && S.profile.activityBonus !== false ? C.workoutBonus(activeKcal(k)) : 0; }
-function dayNorm(k) { const pl = S.plan; if (!pl) return null; const nb = normBase(); const scale = pl.manual ? 1 : nb.kcal / pl.kcal;
+function actBonus(k) { if (stepsMode()) return stepsBonus(k).kcal; return S.profile && S.profile.activityBonus !== false ? C.workoutBonus(activeKcal(k)) : 0; }
+function dayNorm(k) { const pl = S.plan; if (!pl) return null; if (stepsMode()) { const sb = stepsBonus(k), n = C.applyActivity(stepsBase(), sb.kcal, ACFG); return {...n, bonus: sb.kcal, bonusSrc: sb.source}; } const nb = normBase(); const scale = pl.manual ? 1 : nb.kcal / pl.kcal;
   const bonus = actBonus(k);
   return {kcal: nb.kcal + bonus, p: nb.p, f: nb.f, c: Math.max(0, (pl.manual ? nb.c : pl.c * scale) + bonus / 4), fiber: pl.fiber}; }
 // §6: основной приём считается закрытым, если записи уже есть в одном из следующих; перекусы не закрывают приёмы
 function mealLimitsFor(k) { const n = dayNorm(k); const shares = S.profile?.shares || C.MEAL_SHARES; const eaten = {}; for (const [m] of MEALS) eaten[m] = sumItems(dayItems(k).filter(x => x.meal === m));
-  const order = ['breakfast', 'lunch', 'dinner']; let lastIdx = -1; order.forEach((m, i) => { if (eaten[m].kcal > 0) lastIdx = i; });
-  return {lim: C.redistribute(n, eaten, order.filter((m, i) => i < lastIdx), shares), eaten, norm: n}; }
+  const order = ['breakfast', 'lunch', 'dinner']; let lastIdx = -1; order.forEach((m, i) => { if (eaten[m].kcal > 0) lastIdx = i; }); const closed = order.filter((m, i) => i < lastIdx);
+  if (n && n.bonus != null) { const base = C.applyActivity(n, -n.bonus, ACFG); return {lim: C.addBonusToMeals(C.redistribute(base, eaten, closed, shares), n.bonus, ACFG), eaten, norm: n}; } // прибавка — только в ужин и перекус
+  return {lim: C.redistribute(n, eaten, closed, shares), eaten, norm: n}; }
+// строка под нормой на главной (флаг activity.home_line)
+function stepsLine(k) { if (!FLAG('activity.home_line') || !stepsMode()) return ''; const a = S.activity[k], sb = stepsBonus(k);
+  if (!a || !sb.source) return '<div class="mut" style="font-size:12.5px;margin:-6px 20px 10px;color:var(--mut)">шаги ещё не пришли</div>';
+  return `<div style="font-size:12.5px;margin:-6px 20px 10px">Шаги: ${fmtN(a.steps || 0)} · +${sb.kcal} ккал${sb.source === 'steps' ? ' <span class="mut">по шагам</span>' : ''}</div>`; }
 function dayColor(k) { const n = dayNorm(k); if (!n || !dayItems(k).length) return null; return C.color(sumItems(dayItems(k)).kcal, n.kcal, 'kcal'); }
 function streak() { let n = 0, d = mskD(); if (!dayItems(dkey(d)).length) d = addD(d, -1); for (;;) { const c = dayColor(dkey(d)); if (!c || c === 'red') break; n++; d = addD(d, -1); } return n; }
 function trendSeries() { const m = series().filter(x => x.weight); if (!m.length) return []; const byD = Object.fromEntries(m.map(x => [x.d, x.weight])); const days = [];
@@ -404,10 +419,10 @@ function calCardD(k, t, norm) { const left = norm.kcal - t.kcal, q = norm.kcal ?
   <div class="mut" style="margin-top:6px">${fmtN(r0(t.kcal))} из ${fmtN(r0(norm.kcal))} ккал</div><div class="cckb"><i style="width:${Math.min(100, r0(q * 100))}%;background:${COL[kc]}"></i></div>${actBonus(k) ? `<div class="actb" style="margin-top:6px">+${actBonus(k)} ккал за активность</div>` : ''}</div></div></div>`; }
 function scrFood() { const k = DAY, {lim, eaten, norm} = mealLimitsFor(k), t = sumItems(dayItems(k)), dc = C.color(t.kcal, norm.kcal, 'kcal'), left = norm.kcal - t.kcal, st = streak(), isToday = k === dkey(), d = parseD(k), a = S.activity[k];
   return `<div class="scr"><div class="hd"><div><div class="row" style="gap:6px"><button class="lnk" data-act="day" data-n="-1" aria-label="Предыдущий день">‹</button><span class="mut">${isToday ? 'Сегодня, ' : ''}${d.toLocaleDateString('ru-RU', {weekday: 'long', day: 'numeric', month: 'long'})}</span>${isToday ? '' : '<button class="lnk" data-act="day" data-n="1" aria-label="Следующий день">›</button>'}</div><div class="h1">Питание</div></div>${st ? `<div style="font-weight:700;font-size:13px" class="gold">🔥 ${st} ${plural(st, 'день', 'дня', 'дней')}</div>` : ''}</div>
-  ${calCardD(k, t, norm)}${balLine(k)}
+  ${calCardD(k, t, norm)}${stepsLine(k)}${balLine(k)}
   ${tips().map(x => `<div class="tip">💡 ${esc(x)}</div>`).join('')}
   ${MEALS.map(([m, tn, icn]) => { const e = eaten[m], l = lim[m], c = C.color(e.kcal, l.kcal, 'kcal'), items = dayItems(k).filter(x => x.meal === m);
-    return `<div class="card row" style="padding:12px 14px;cursor:pointer" data-act="meal" data-m="${m}"><div class="ib">${ic(icn)}</div><div class="sp"><div style="display:flex;justify-content:space-between"><b style="font-size:15px">${tn}</b><b style="font-size:14px;color:${e.kcal ? COL[c] : 'var(--mut)'}">${r0(e.kcal)} / ${r0(l.kcal)}</b></div>
+    return `<div class="card row" style="padding:12px 14px;cursor:pointer" data-act="meal" data-m="${m}"><div class="ib">${ic(icn)}</div><div class="sp"><div style="display:flex;justify-content:space-between"><b style="font-size:15px">${tn}${FLAG('activity.meal_badge') && l.bonus > 0 ? ` <span class="actb" style="font-size:11px;font-weight:600;margin-left:4px">+${l.bonus} ккал за шаги</span>` : ''}</b><b style="font-size:14px;color:${e.kcal ? COL[c] : 'var(--mut)'}">${r0(e.kcal)} / ${r0(l.kcal)}</b></div>
     <div class="mut" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${items.length ? esc(items.map(x => x.name).join(', ')) : 'Пока пусто · нажмите, чтобы добавить'}</div><div class="bar" style="margin-top:6px;height:5px"><i style="width:${Math.min(100, l.kcal ? e.kcal / l.kcal * 100 : 0)}%;background:${COL[c]}"></i></div></div></div>`; }).join('')}
   ${waterRow(k)}${actCard(k, a)}</div>`; }
 function mealSheet(m) { setTimeout(() => { const h = document.querySelector('#ov .sheet'); if (h) h.dataset.mealsheet = m; });  const items = dayItems(DAY).filter(x => x.meal === m), {lim} = mealLimitsFor(DAY), t = sumItems(items);
@@ -850,7 +865,7 @@ function scrProfile() { const p = S.profile, pl = S.plan, appUrl = location.orig
   <div class="card"><h3>Параметры</h3><div class="mut" style="line-height:1.7">${p.sex === 'male' ? 'Мужчина' : 'Женщина'}, ${pAge(p)} ${plural(pAge(p), 'год', 'года', 'лет')}, ${p.height} см, ${r1(lastWeight())} кг<br>Цель: ${{loss: 'похудеть', maintain: 'поддерживать вес', gain: 'набрать'}[p.goal]}${p.targetWeight ? ` до ${p.targetWeight} кг` : ''}<br>Активность: ${ACT.find(a => a[0] === p.activity)[1]}</div>
   <button class="btn sec" style="margin-top:10px" data-act="editProfile">Изменить параметры и цель</button></div>
   <div class="card"><h3>Распределение по приёмам</h3><form id="shf"><div class="g3" style="grid-template-columns:repeat(4,1fr)">${MEALS.map(([m, t]) => `<label class="fld"><span>${t}, %</span><input name="${m}" inputmode="numeric" value="${r0((p.shares || C.MEAL_SHARES)[m] * 100)}"></label>`).join('')}</div>
-  <label class="fld" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="wb" style="width:auto" ${p.activityBonus !== false ? 'checked' : ''}><span style="margin:0">Добавлять к норме половину активных калорий (шаги и тренировки)</span></label><button class="btn sm">Сохранить</button></form></div>
+  <label class="fld" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="wb" style="width:auto" ${p.activityBonus !== false ? 'checked' : ''}><span style="margin:0">Добавлять к норме половину активных калорий (шаги и тренировки)</span></label>${FLAG('activity.profile_toggle') ? `<label class="fld" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="us" style="width:auto" ${p.useSteps === true ? 'checked' : ''}><span style="margin:0">Учитывать шаги<br><span class="mut" style="font-size:12px">Норма = базовый обмен × ${String(ACFG.k_sedentary).replace('.', ',')} + активные калории за день. Последняя синхронизация: ${S.healthSync ? new Date(S.healthSync).toLocaleString('ru-RU', {timeZone: 'Europe/Moscow'}) : 'ещё не было'}</span></span></label>` : ''}<button class="btn sm">Сохранить</button></form></div>
   ${AWARDS_ON ? `<div class="card"><label class="row" style="cursor:pointer;align-items:center"><span class="sp"><b>Звук наград</b><div class="mut">Короткий сигнал и вибрация при новой награде</div></span><input type="checkbox" id="awSound" ${S.awardSound !== false ? 'checked' : ''} style="width:22px;height:22px"></label></div>` : ''}
   <div class="card"><h3>Отчёт</h3><div class="mut" style="margin-bottom:10px">Дневник и статистика за выбранный период одним PDF-файлом</div><button class="btn sec" data-act="pdf">Экспорт в PDF</button></div>
   <div class="card"><h3>Вода</h3><form id="wnf" class="row" style="gap:8px;align-items:flex-end"><label class="fld sp" style="margin:0"><span>Норма в день, мл (пусто — авто: 30 мл/кг, не больше 3,5 л)</span><input name="wml" inputmode="numeric" placeholder="${C.waterNormMl(lastWeight() || S.profile?.weight)}" value="${S.profile?.waterMl || ''}"></label><button class="btn sm">Сохранить</button></form></div>
@@ -862,7 +877,7 @@ function scrProfile() { const p = S.profile, pl = S.plan, appUrl = location.orig
   ${S.log.length ? `<div class="card"><h3>Журнал нормы</h3>${S.log.slice(-5).reverse().map(l => `<div class="li"><span class="mut">${fmtD(parseD(l.d))}</span><span style="font-size:13px;text-align:right">${esc(l.t)}</span></div>`).join('')}</div>` : ''}
   <div class="card"><h3>Данные</h3><button class="btn sm sec" data-act="exportEnc">Скачать зашифрованную копию</button><p class="mut" style="margin-top:10px">Nutricio даёт ориентиры и не заменяет консультацию врача.</p></div></div>`; }
 function bindProfileForm() { const f = $('#shf'); if (!f) return; f.onsubmit = async e => { e.preventDefault(); const d = new FormData(f), sh = {}; let sum = 0; for (const [m] of MEALS) { sh[m] = (num(d.get(m)) || 0) / 100; sum += sh[m]; }
-  if (Math.abs(sum - 1) > 0.011) return toast(`Сумма должна быть 100%, сейчас ${r0(sum * 100)}%`); S.profile.shares = sh; S.profile.activityBonus = !!d.get('wb'); await save(); render(); toast('Сохранено'); }; }
+  if (Math.abs(sum - 1) > 0.011) return toast(`Сумма должна быть 100%, сейчас ${r0(sum * 100)}%`); S.profile.shares = sh; S.profile.activityBonus = !!d.get('wb'); if (FLAG('activity.profile_toggle')) S.profile.useSteps = !!d.get('us'); await save(); render(); toast('Сохранено'); }; }
 
 const ACTIONS = {
   day: d => { const x = addD(parseD(DAY), +d.n); if (dkey(x) > dkey()) return; DAY = dkey(x); render(); },

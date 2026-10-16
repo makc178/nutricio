@@ -27,6 +27,7 @@
 
   // §3: K по уровню или по 7-дневным данным «Здоровья» (средние шаги/день, тренировок за неделю)
   function activityFactor(levelOrHealth) {
+    if (typeof levelOrHealth === 'number' && levelOrHealth > 0) return levelOrHealth; // явный K (режим «Учитывать шаги»)
     if (typeof levelOrHealth === 'string') {
       const k = ACTIVITY[levelOrHealth];
       if (!k) throw new Error('unknown activity level');
@@ -164,8 +165,35 @@
     return { bmi: r1(bmi(profile.weight, profile.height)), bmr: Math.round(b), k, tdee: Math.round(t), minKcal: Math.round(minCalories(profile.sex, b)), ...m, meals: mealLimits(m) };
   }
 
+  // Прибавка за активность (формула Нутрициолога 16.10.2026). Все коэффициенты — из config.json → activity.
+  // day: {activeKcal, steps}; активные калории важнее шагов; тренировки отдельно не прибавляются (уже внутри активных калорий).
+  function activityBonus(day, weight, cfg) {
+    const d = day || {}, ak = Number(d.activeKcal), st = Number(d.steps);
+    let raw = 0, source = null;
+    if (isFinite(ak) && ak > 0) { raw = ak; source = 'active'; }
+    else if (isFinite(st) && st > 0 && weight > 0) { raw = cfg.kcal_per_step_kg * weight * Math.max(0, st - cfg.steps_baseline); source = 'steps'; }
+    const step = cfg.round > 0 ? cfg.round : 1;
+    const kcal = Math.max(0, Math.min(cfg.cap, Math.round(raw / step) * step));
+    return { kcal, source, raw: Math.round(raw) };
+  }
+  // Норма дня = базовая норма (с K = k_sedentary) + прибавка; белок без изменений, прибавка делится на углеводы/жиры
+  function applyActivity(base, bonusKcal, cfg) {
+    const b = bonusKcal || 0, sm = cfg.split_macros;
+    return { ...base, kcal: base.kcal + b, c: base.c + (b * sm.carbs) / KCAL.c, f: base.f + (b * sm.fat) / KCAL.f, p: base.p };
+  }
+  // Лимиты по приёмам: limits посчитаны от базовой нормы; вся прибавка уходит в ужин и перекус (cfg.split_meals)
+  function addBonusToMeals(limits, bonusKcal, cfg) {
+    const out = {}, b = bonusKcal || 0, sm = cfg.split_macros;
+    for (const m of Object.keys(limits)) out[m] = { ...limits[m] };
+    for (const [m, share] of Object.entries(cfg.split_meals)) {
+      if (!out[m]) continue; const add = b * share;
+      out[m].kcal += add; out[m].c += (add * sm.carbs) / KCAL.c; out[m].f += (add * sm.fat) / KCAL.f; out[m].bonus = Math.round(add);
+    }
+    return out;
+  }
+
   // вода: 30 мл/кг, не больше 3,5 л; ручная норма из «Профиля» важнее
   const waterNormMl = (weight, override) => (override > 0 ? Math.round(override) : Math.min(3500, Math.round(30 * (weight || 0))));
   return { waterNormMl, ACTIVITY, MEAL_SHARES, MEAL_ORDER, SEDENTARY_STEPS, bmi, bmr, activityFactor, tdee, minCalories, targetCalories,
-    paceCheck, macros, mealLimits, redistribute, color, weightTrend, autocorrect, isAutocorrectDue, needsRecalc, workoutBonus, plan };
+    paceCheck, macros, mealLimits, redistribute, activityBonus, applyActivity, addBonusToMeals, color, weightTrend, autocorrect, isAutocorrectDue, needsRecalc, workoutBonus, plan };
 });
