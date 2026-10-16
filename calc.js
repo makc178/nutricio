@@ -167,14 +167,16 @@
 
   // Прибавка за активность (формула Нутрициолога 16.10.2026). Все коэффициенты — из config.json → activity.
   // day: {activeKcal, steps}; активные калории важнее шагов; тренировки отдельно не прибавляются (уже внутри активных калорий).
-  function activityBonus(day, weight, cfg) {
+  // goal (loss|maintain|gain) — доля прибавки по цели (cfg.goal_share), применяется до округления и потолка
+  function activityBonus(day, weight, cfg, goal) {
     const d = day || {}, ak = Number(d.activeKcal), st = Number(d.steps);
     let raw = 0, source = null;
     if (isFinite(ak) && ak > 0) { raw = ak; source = 'active'; }
     else if (isFinite(st) && st > 0 && weight > 0) { raw = cfg.kcal_per_step_kg * weight * Math.max(0, st - cfg.steps_baseline); source = 'steps'; }
+    const gs = cfg.goal_share && goal && cfg.goal_share[goal] != null ? cfg.goal_share[goal] : 1, adj = raw * gs;
     const step = cfg.round > 0 ? cfg.round : 1;
-    const kcal = Math.max(0, Math.min(cfg.cap, Math.round(raw / step) * step));
-    return { kcal, source, raw: Math.round(raw) };
+    const kcal = Math.max(0, Math.min(cfg.cap, Math.round(adj / step) * step));
+    return { kcal, source, raw: Math.round(raw), share: gs };
   }
   // Норма дня = базовая норма (с K = k_sedentary) + прибавка; белок без изменений, прибавка делится на углеводы/жиры
   function applyActivity(base, bonusKcal, cfg) {
