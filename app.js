@@ -164,7 +164,7 @@ async function importInbox(tok) { if (INBOX_BUSY) return 0; INBOX_BUSY = true; t
 function importHealth(j) { const days = HL.normalize(j); let n = 0;
   for (const d of days) { if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d.date || '')) continue; const a = S.activity[d.date] = S.activity[d.date] || {steps: 0, workouts: []};
     if (num(d.steps) != null) { a.steps = r0(num(d.steps)); a.src = 'health'; }
-    if (num(d.activeKcal) != null) a.activeKcal = r0(num(d.activeKcal));
+    if (num(d.activeKcal) != null) { a.activeKcal = r0(num(d.activeKcal)); a.exSub = r0(num(d.exKcal) || 0); }  // exSub: ккал исключённых тренировок, уже вычтенных из activeKcal (Health Auto Export)
     if (num(d.weight) >= 30 && num(d.weight) <= 300) { upsertMeasure({weight: num(d.weight)}, d.date); S.measures.sort((x, y) => x.d < y.d ? -1 : 1); }
     if (d.workouts) a.workouts = (a.workouts || []).filter(w => w.src !== 'health').concat(d.workouts.map(w => ({id: uid(), type: wType(w.type)[1], hk: String(w.type || '').slice(0, 60), start: /^\d{4}-\d{2}-\d{2}/.test(w.start || '') ? String(w.start).slice(0, 25) : undefined, min: r0(num(w.minutes) || 0), kcal: r0(num(w.kcal) || 0), dist: num(w.distance) != null ? r1(num(w.distance)) : undefined, src: 'health'})));
     n++; }
@@ -189,13 +189,13 @@ function normBase() { const pl = S.plan; return pl.manual ? {kcal: pl.manual.kca
 // режим «Учитывать шаги» (формула Нутрициолога 16.10): норма = БОО × K сидячий + прибавка за активность; включается в «Профиле» (флаг activity.profile_toggle)
 const stepsMode = () => !!(FLAG('activity.profile_toggle') && S.profile && S.profile.useSteps === true && ACFG);
 function stepsBonus(k) { const a = S.activity[k]; if (!a) return {kcal: 0, source: null, raw: 0};
-  const ex = new Set(ACFG.exclude_workout_types || []), exK = (a.workouts || []).filter(w => ex.has(wType(w.type)[0])).reduce((s, w) => s + (w.kcal || 0), 0);
+  const ex = new Set(ACFG.exclude_workout_types || []), exK = Math.max(0, (a.workouts || []).filter(w => ex.has(wType(w.type)[0])).reduce((s, w) => s + (w.kcal || 0), 0) - (a.exSub || 0));
   return C.activityBonus({activeKcal: a.activeKcal != null && a.activeKcal > 0 ? Math.max(0, a.activeKcal - exK) : null, steps: a.steps}, lastWeight() || S.profile?.weight, ACFG, S.profile?.goal); }
 function stepsBase() { const pl = S.plan; if (pl.manual) return {kcal: pl.manual.kcal, p: pl.manual.p, f: pl.manual.f, c: pl.manual.c, fiber: pl.fiber};
   const sp = C.plan({...planProf(S.profile, pl.weightAt), activity: ACFG.k_sedentary}), adj = pl.adj || 0;
   return {kcal: sp.kcal + adj, p: sp.p, f: sp.f, c: Math.max(0, sp.c * (sp.kcal + adj) / sp.kcal), fiber: sp.fiber}; }
-function activeKcal(k) { const a = S.activity[k]; if (!a) return 0; const ws = a.workouts || [], fish = ws.filter(w => wType(w.type)[0] === 'fishing').reduce((s, w) => s + (w.kcal || 0), 0); // рыбалка в списке, но не в активных калориях
-  const wk = ws.reduce((s, w) => s + (w.kcal || 0), 0) - fish;
+function activeKcal(k) { const a = S.activity[k]; if (!a) return 0; const ws = a.workouts || [], fishAll = ws.filter(w => wType(w.type)[0] === 'fishing').reduce((s, w) => s + (w.kcal || 0), 0), fish = Math.max(0, fishAll - (a.exSub || 0)); // рыбалка в списке, но не в активных калориях
+  const wk = ws.reduce((s, w) => s + (w.kcal || 0), 0) - fishAll;
   if (a.activeKcal != null) return Math.max(a.activeKcal - fish, wk, 0); return Math.round((a.steps || 0) * 0.0005 * (lastWeight() || S.profile?.weight || 70)) + wk; }
 function actBonus(k) { if (stepsMode()) return stepsBonus(k).kcal; return S.profile && S.profile.activityBonus !== false ? C.workoutBonus(activeKcal(k)) : 0; }
 function dayNorm(k) { const pl = S.plan; if (!pl) return null; if (stepsMode()) { const sb = stepsBonus(k), n = C.applyActivity(stepsBase(), sb.kcal, ACFG); return {...n, bonus: sb.kcal, bonusSrc: sb.source}; } const nb = normBase(); const scale = pl.manual ? 1 : nb.kcal / pl.kcal;
@@ -759,6 +759,7 @@ const HK_EXTRA = {tabletennis: 'tabletennis', hiking: 'hiking', fishing: 'fishin
 const WT = WT0.map(([id, t, re, iconId]) => [id, WMAP[id]?.t || t, WICONS[iconId || id] || WICONS.other || '', re]);
 const HK2W = {}; for (const [id, m] of Object.entries(WMAP)) for (const h of m.hk) HK2W[h.toLowerCase()] = id; Object.assign(HK2W, HK_EXTRA);
 const wType = t => { const raw = String(t || ''), k = raw.replace(/^HKWorkoutActivityType\.?/i, '').toLowerCase(); const id = HK2W[k]; if (id) return WT.find(x => x[0] === id) || WT[WT.length - 1]; return WT.find(x => x[3].test(raw)) || WT[WT.length - 1]; };
+HL.configure({exclude: (ACFG && ACFG.exclude_workout_types) || [], typeId: t => wType(t)[0]});  // импорт Health Auto Export: ккал исключённых тренировок (рыбалка) вычитаются из активных
 // Ось Y из данных периода с запасом: ±1,5 кг, минимальный размах 4 кг. Цель за пределами — подпись у края, ось не растягивается.
 function yAxis(vals, minSpan = 4, pad = 1.5) { let lo = Math.min(...vals) - pad, hi = Math.max(...vals) + pad; if (hi - lo < minSpan) { const m = (hi + lo) / 2; lo = m - minSpan / 2; hi = m + minSpan / 2; } return [lo, hi]; }
 function goalMath() { const p = S.profile, tr = trendSeries(), cur = tr.length ? tr[tr.length - 1].t : lastWeight(), w0 = p.weight; if (p.goal === 'maintain' || !p.targetWeight || cur == null) return null;
